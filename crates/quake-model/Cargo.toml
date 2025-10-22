@@ -1,0 +1,11 @@
+[package]
+name = "quake-model"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+byteorder = "1.5.0"
+anyhow = "1.0.100"
+bitflags = "2.10.0"
+quake-collision = { path = "../quake-collision" }
+quake-pack = { path = "../quake-pack" }

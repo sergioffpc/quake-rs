@@ -1,0 +1,9 @@
+[package]
+name = "quake-app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quake-map = { path = "../quake-map" }
+quake-model = { path = "../quake-model" }
+quake-pack = { path = "../quake-pack" }
