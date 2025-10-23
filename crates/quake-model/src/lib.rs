@@ -6,7 +6,7 @@ pub fn read_f32_bounding_sphere<R>(
 where
     R: std::io::Read,
 {
-    quake_collision::BoundingVolume::read_bounding_sphere_with(reader, |r| {
+    quake_collision::BoundingVolume::read_bounding_sphere_at_origin_with(reader, |r| {
         Ok(r.read_f32::<LittleEndian>()?)
     })
 }
@@ -14,13 +14,13 @@ where
 pub fn read_scaled_position_bounding_box<R>(
     reader: &mut R,
     scale: [f32; 3],
-    origin: [f32; 3],
+    translate: [f32; 3],
 ) -> anyhow::Result<quake_collision::BoundingVolume>
 where
     R: std::io::Read,
 {
     quake_collision::BoundingVolume::read_bounding_box_with(reader, |r| {
-        let point = read_scaled_position(r, scale, origin)?;
+        let point = read_scaled_position(r, scale, translate)?;
         r.read_u8()? as f32;
 
         Ok(point)
@@ -36,14 +36,15 @@ impl quake_pack::FromBytes for Mdl {
 #[derive(Clone, Debug)]
 pub struct Mdl {
     pub bounding_volume: quake_collision::BoundingVolume,
-    pub sync_type: SyncType,
-    pub flags: Flags,
+    pub eye_position: [f32; 3],
     pub texture_width: u32,
     pub texture_height: u32,
     pub textures: Box<[Texture]>,
     pub texture_coords: Box<[TextureCoord]>,
     pub triangles: Box<[Triangle]>,
     pub frames: Box<[Frame]>,
+    pub sync_type: SyncType,
+    pub flags: Flags,
 }
 
 impl Mdl {
@@ -63,10 +64,10 @@ impl Mdl {
         }
 
         let scale = read_f32_vector3(&mut reader)?;
-        let origin = read_f32_vector3(&mut reader)?;
+        let translate = read_f32_vector3(&mut reader)?;
         let bounding_volume = read_f32_bounding_sphere(&mut reader)?;
 
-        let _eye_position = read_f32_vector3(&mut reader)?;
+        let eye_position = read_f32_vector3(&mut reader)?;
 
         let textures_count = reader.read_u32::<LittleEndian>()?;
         let texture_width = reader.read_u32::<LittleEndian>()?;
@@ -84,18 +85,20 @@ impl Mdl {
             Self::read_textures(&mut reader, textures_count, texture_width, texture_height)?;
         let texture_coords = Self::read_texture_coords(&mut reader, vertices_count)?;
         let triangles = Self::read_triangles(&mut reader, triangles_count)?;
-        let frames = Self::read_frames(&mut reader, frames_count, vertices_count, scale, origin)?;
+        let frames =
+            Self::read_frames(&mut reader, frames_count, vertices_count, scale, translate)?;
 
         Ok(Self {
             bounding_volume,
-            sync_type,
-            flags,
+            eye_position,
             texture_width,
             texture_height,
             textures,
             texture_coords,
             triangles,
             frames,
+            sync_type,
+            flags,
         })
     }
 
@@ -151,14 +154,14 @@ impl Mdl {
         frames_count: u32,
         vertices_count: u32,
         scale: [f32; 3],
-        origin: [f32; 3],
+        translate: [f32; 3],
     ) -> anyhow::Result<Box<[Frame]>>
     where
         R: std::io::Read + std::io::Seek,
     {
         let mut frames = Vec::with_capacity(frames_count as usize);
         for _ in 0..frames_count {
-            let frame = Frame::from_reader(reader, vertices_count, scale, origin)?;
+            let frame = Frame::from_reader(reader, vertices_count, scale, translate)?;
             frames.push(frame);
         }
 
@@ -191,15 +194,15 @@ where
 fn read_scaled_position<R>(
     reader: &mut R,
     scale: [f32; 3],
-    origin: [f32; 3],
+    translate: [f32; 3],
 ) -> anyhow::Result<[f32; 3]>
 where
     R: std::io::Read,
 {
     Ok([
-        reader.read_u8()? as f32 * scale[0] + origin[0],
-        reader.read_u8()? as f32 * scale[1] + origin[1],
-        reader.read_u8()? as f32 * scale[2] + origin[2],
+        reader.read_u8()? as f32 * scale[0] + translate[0],
+        reader.read_u8()? as f32 * scale[1] + translate[1],
+        reader.read_u8()? as f32 * scale[2] + translate[2],
     ])
 }
 
@@ -366,7 +369,7 @@ impl Frame {
         reader: &mut R,
         vertices_count: u32,
         scale: [f32; 3],
-        origin: [f32; 3],
+        translate: [f32; 3],
     ) -> anyhow::Result<Self>
     where
         R: std::io::Read + std::io::Seek,
@@ -377,13 +380,13 @@ impl Frame {
                 reader,
                 vertices_count,
                 scale,
-                origin,
+                translate,
             )?),
             _ => Frame::Group(FrameGroup::from_reader(
                 reader,
                 vertices_count,
                 scale,
-                origin,
+                translate,
             )?),
         };
         Ok(frame)
@@ -402,19 +405,19 @@ impl FrameSingle {
         reader: &mut R,
         vertices_count: u32,
         scale: [f32; 3],
-        origin: [f32; 3],
+        translate: [f32; 3],
     ) -> anyhow::Result<Self>
     where
         R: std::io::Read + std::io::Seek,
     {
         const FRAME_NAME_SIZE: usize = 0x10;
 
-        let bounding_volume = read_scaled_position_bounding_box(reader, scale, origin)?;
+        let bounding_volume = read_scaled_position_bounding_box(reader, scale, translate)?;
         let name = read_null_terminated_string(reader, FRAME_NAME_SIZE)?;
 
         let mut positions = Vec::with_capacity(vertices_count as usize);
         for _ in 0..vertices_count {
-            let position = read_scaled_position(reader, scale, origin)?;
+            let position = read_scaled_position(reader, scale, translate)?;
             let _normal_index = reader.read_u8()?;
 
             positions.push(position);
@@ -436,7 +439,7 @@ impl FrameGroup {
         reader: &mut R,
         vertices_count: u32,
         scale: [f32; 3],
-        origin: [f32; 3],
+        translate: [f32; 3],
     ) -> anyhow::Result<Self>
     where
         R: std::io::Read + std::io::Seek,
@@ -454,7 +457,7 @@ impl FrameGroup {
                 reader,
                 vertices_count,
                 scale,
-                origin,
+                translate,
             )?);
         }
 
