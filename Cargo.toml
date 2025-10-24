@@ -1,3 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/quake-app", "crates/quake-collision", "crates/quake-map", "crates/quake-model", "crates/quake-pack"]
+members = [
+    "crates/quake-animation",
+    "crates/quake-app",
+    "crates/quake-collision",
+    "crates/quake-map",
+    "crates/quake-model",
+    "crates/quake-pack"
+]

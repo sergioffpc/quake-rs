@@ -1,3 +1,5 @@
+use glam::FloatExt;
+
 #[derive(Copy, Clone, Debug)]
 pub enum BoundingVolume {
     Sphere { center: glam::Vec3, radius: f32 },
@@ -24,7 +26,7 @@ impl BoundingVolume {
     pub fn read_bounding_box_with<R, F>(reader: &mut R, read_vector_fn: F) -> anyhow::Result<Self>
     where
         R: std::io::Read,
-        F: Fn(&mut R) -> anyhow::Result<[f32; 3]>,
+        F: Fn(&mut R) -> anyhow::Result<glam::Vec3>,
     {
         let min = read_vector_fn(reader)?.into();
         let max = read_vector_fn(reader)?.into();
@@ -40,7 +42,7 @@ impl BoundingVolume {
 
     pub fn transform_mut(&mut self, transform: &glam::Mat4) {
         match self {
-            BoundingVolume::Sphere { center, radius } => {
+            BoundingVolume::Sphere { center, .. } => {
                 *center = transform.transform_point3(*center);
             }
             BoundingVolume::Box { min, max } => {
@@ -76,6 +78,45 @@ impl BoundingVolume {
             | (BoundingVolume::Box { min, max }, BoundingVolume::Sphere { center, radius }) => {
                 Self::sphere_intersects_box(*center, *radius, *min, *max)
             }
+        }
+    }
+
+    pub fn lerp(&self, other: &Self, t: f32) -> Self {
+        self.interpolate_with(other, t, f32::lerp)
+    }
+
+    pub fn interpolate_with<F>(&self, other: &Self, t: f32, interpolate_fn: F) -> Self
+    where
+        F: Fn(f32, f32, f32) -> f32,
+    {
+        match (self, other) {
+            (
+                Self::Sphere {
+                    center: c1,
+                    radius: r1,
+                },
+                Self::Sphere {
+                    center: c2,
+                    radius: r2,
+                },
+            ) => Self::Sphere {
+                center: Self::interpolate_vec3(&c1, &c2, t, &interpolate_fn),
+                radius: interpolate_fn(*r1, *r2, t),
+            },
+            (
+                Self::Box {
+                    min: min1,
+                    max: max1,
+                },
+                Self::Box {
+                    min: min2,
+                    max: max2,
+                },
+            ) => Self::Box {
+                min: Self::interpolate_vec3(&min1, &min2, t, &interpolate_fn),
+                max: Self::interpolate_vec3(&max1, &max2, t, &interpolate_fn),
+            },
+            _ => panic!("Unsupported bounding volumes"),
         }
     }
 
@@ -117,5 +158,22 @@ impl BoundingVolume {
         (min1[0] <= max2[0] && max1[0] >= min2[0])
             && (min1[1] <= max2[1] && max1[1] >= min2[1])
             && (min1[2] <= max2[2] && max1[2] >= min2[2])
+    }
+
+    fn interpolate_vec3<F>(
+        v1: &glam::Vec3,
+        v2: &glam::Vec3,
+        t: f32,
+        interpolate_fn: F,
+    ) -> glam::Vec3
+    where
+        F: Fn(f32, f32, f32) -> f32,
+    {
+        [
+            interpolate_fn(v1[0], v2[0], t),
+            interpolate_fn(v1[1], v2[1], t),
+            interpolate_fn(v1[2], v2[2], t),
+        ]
+        .into()
     }
 }
