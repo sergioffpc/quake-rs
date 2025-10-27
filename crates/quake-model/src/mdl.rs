@@ -437,8 +437,8 @@ impl FrameSingle {
 
 #[derive(Clone, Debug)]
 pub struct FrameGroup {
-    bounding_volume: quake_collision::BoundingVolume,
-    frames: TimedGroup<FrameSingle>,
+    pub bounding_volume: quake_collision::BoundingVolume,
+    pub frames: TimedGroup<FrameSingle>,
 }
 
 impl FrameGroup {

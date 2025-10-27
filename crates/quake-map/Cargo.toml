@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+quake-collision = { path = "../quake-collision" }
+quake-pack = { path = "../quake-pack" }
+
 anyhow = "1.0.100"
 byteorder = "1.5.0"
 slotmap = "1.0.7"
 nom = "8.0.0"
-quake-collision = { path = "../quake-collision" }
-quake-pack = { path = "../quake-pack" }
 glam = "0.30.8"

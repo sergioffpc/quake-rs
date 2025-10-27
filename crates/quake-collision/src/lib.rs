@@ -1,5 +1,3 @@
-use glam::FloatExt;
-
 #[derive(Copy, Clone, Debug)]
 pub enum BoundingVolume {
     Sphere { center: glam::Vec3, radius: f32 },
@@ -79,10 +77,6 @@ impl BoundingVolume {
                 Self::sphere_intersects_box(*center, *radius, *min, *max)
             }
         }
-    }
-
-    pub fn lerp(&self, other: &Self, t: f32) -> Self {
-        self.interpolate_with(other, t, f32::lerp)
     }
 
     pub fn interpolate_with<F>(&self, other: &Self, t: f32, interpolate_fn: F) -> Self

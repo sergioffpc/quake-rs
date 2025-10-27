@@ -5,4 +5,7 @@ edition = "2024"
 
 [dependencies]
 quake-collision = { path = "../quake-collision" }
+quake-model = { path = "../quake-model" }
+
 glam = "0.30.8"
+indexmap = "2.12.0"
