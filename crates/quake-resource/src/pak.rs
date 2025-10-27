@@ -19,6 +19,19 @@ impl Pak {
         Ok(Self { archives })
     }
 
+    pub fn by_name<T: FromBytes>(&mut self, name: &str) -> anyhow::Result<T> {
+        for archive in &mut self.archives {
+            if let Ok(data) = archive.by_name(name) {
+                return T::from_bytes(&data);
+            }
+        }
+        Err(anyhow::anyhow!("File not found"))
+    }
+
+    pub fn file_names(&self) -> impl Iterator<Item = String> {
+        self.archives.iter().flat_map(|a| a.file_names())
+    }
+
     fn find_pak_files<P>(path: P) -> anyhow::Result<Vec<DirEntry>>
     where
         P: AsRef<std::path::Path>,
@@ -57,19 +70,6 @@ impl Pak {
                 PakArchive::new(reader)
             })
             .collect::<Result<_, _>>()
-    }
-
-    pub fn by_name<T: FromBytes>(&mut self, name: &str) -> anyhow::Result<T> {
-        for archive in &mut self.archives {
-            if let Ok(data) = archive.by_name(name) {
-                return T::from_bytes(&data);
-            }
-        }
-        Err(anyhow::anyhow!("File not found"))
-    }
-
-    pub fn file_names(&self) -> impl Iterator<Item = String> {
-        self.archives.iter().flat_map(|a| a.file_names())
     }
 }
 

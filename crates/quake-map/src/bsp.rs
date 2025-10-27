@@ -66,7 +66,7 @@ impl Lump {
     }
 }
 
-impl quake_pack::FromBytes for Bsp {
+impl quake_resource::FromBytes for Bsp {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         Bsp::from_slice(bytes)
     }

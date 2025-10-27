@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 quake-collision = { path = "../quake-collision" }
-quake-pack = { path = "../quake-pack" }
+quake-resource = { path = "../quake-resource" }
 
 byteorder = "1.5.0"
 anyhow = "1.0.100"

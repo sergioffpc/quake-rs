@@ -27,7 +27,7 @@ where
     })
 }
 
-impl quake_pack::FromBytes for Mdl {
+impl quake_resource::FromBytes for Mdl {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         Mdl::from_slice(bytes)
     }
