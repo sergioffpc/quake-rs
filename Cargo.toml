@@ -4,7 +4,7 @@ members = [
     "crates/quake-animation",
     "crates/quake-app",
     "crates/quake-collision",
-    "crates/quake-command",
+    "crates/quake-console",
     "crates/quake-map",
     "crates/quake-model",
     "crates/quake-program",

@@ -1,0 +1,7 @@
+[package]
+name = "quake-console"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quake-resource = { path = "../quake-resource" }

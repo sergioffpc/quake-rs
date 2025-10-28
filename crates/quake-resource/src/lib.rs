@@ -23,13 +23,13 @@ impl Resources {
         Ok(Self { basedir, pak })
     }
 
-    pub fn by_name<T: FromBytes>(&mut self, name: &str) -> anyhow::Result<T> {
+    pub fn by_name<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
         // Try loading from filesystem first, then fall back to PAK archives
         self.load_from_filesystem(name)
             .or_else(|_| self.pak.by_name(name))
     }
 
-    fn load_from_filesystem<T: FromBytes>(&mut self, name: &str) -> anyhow::Result<T> {
+    fn load_from_filesystem<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
         let path = self
             .basedir
             .join(name)

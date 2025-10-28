@@ -1,5 +1,22 @@
+struct App {
+    resources: quake_resource::Resources,
+    console: quake_console::Console,
+}
+
+impl App {
+    fn new<P>(resources_path: P) -> anyhow::Result<Self>
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let resources = quake_resource::Resources::new(resources_path)?;
+        let console = quake_console::Console::new(&resources);
+
+        Ok(Self { resources, console })
+    }
+}
+
 fn main() {
-    let mut resources = quake_resource::Resources::new("resources/").unwrap();
-    let quake_rc = resources.by_name::<String>("quake.rc").unwrap();
-    println!("quake.rc: {:?}", quake_rc);
+    let mut app = App::new("resources/").unwrap();
+    app.console.add_text("exec quake.rc");
+    app.console.execute(&app.resources);
 }

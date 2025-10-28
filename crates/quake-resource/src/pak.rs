@@ -2,11 +2,11 @@ use crate::{FromBytes, read_null_terminated_string};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
 use std::fs::{DirEntry, File};
-use std::io::BufReader;
+use std::io::{BufReader, Read, Seek};
 
 #[derive(Debug)]
 pub struct Pak {
-    archives: Box<[PakArchive<BufReader<File>>]>,
+    archives: Box<[PakArchive]>,
 }
 
 impl Pak {
@@ -14,13 +14,17 @@ impl Pak {
     where
         P: AsRef<std::path::Path>,
     {
-        let pak_files = Self::find_pak_files(path)?;
-        let archives = Self::load_archives(pak_files)?;
+        let files = Self::find_pak_files(path)?;
+        let archives = files
+            .iter()
+            .map(|f| PakArchive::new(f.path()))
+            .collect::<Result<_, _>>()?;
+
         Ok(Self { archives })
     }
 
-    pub fn by_name<T: FromBytes>(&mut self, name: &str) -> anyhow::Result<T> {
-        for archive in &mut self.archives {
+    pub fn by_name<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
+        for archive in &self.archives {
             if let Ok(data) = archive.by_name(name) {
                 return T::from_bytes(&data);
             }
@@ -61,32 +65,21 @@ impl Pak {
             .map(|e| e.to_ascii_lowercase() == PAK_EXTENSION)
             .unwrap_or(false)
     }
-
-    fn load_archives(files: Vec<DirEntry>) -> anyhow::Result<Box<[PakArchive<BufReader<File>>]>> {
-        files
-            .iter()
-            .map(|f| {
-                let reader = BufReader::new(File::open(f.path())?);
-                PakArchive::new(reader)
-            })
-            .collect::<Result<_, _>>()
-    }
 }
 
 #[derive(Debug)]
-struct PakArchive<R>
-where
-    R: std::io::Read + std::io::Seek,
-{
-    reader: R,
+struct PakArchive {
+    path: std::path::PathBuf,
     entries: HashMap<String, (u64, u64)>,
 }
 
-impl<R> PakArchive<R>
-where
-    R: std::io::Read + std::io::Seek,
-{
-    fn new(mut reader: R) -> anyhow::Result<Self> {
+impl PakArchive {
+    fn new<P>(path: P) -> anyhow::Result<Self>
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let mut reader = BufReader::new(File::open(path.as_ref())?);
+
         let mut ident = [0u8; 4];
         reader.read_exact(&mut ident)?;
         if ident != *b"PACK" {
@@ -100,7 +93,10 @@ where
 
         let entries = Self::read_directory_entries(&mut reader, directory_offset, directory_count)?;
 
-        Ok(Self { reader, entries })
+        Ok(Self {
+            path: path.as_ref().to_owned(),
+            entries,
+        })
     }
 
     fn read_directory_entries<T>(
@@ -126,14 +122,17 @@ where
         Ok(entries)
     }
 
-    fn by_name(&mut self, name: &str) -> anyhow::Result<Box<[u8]>> {
+    fn by_name(&self, name: &str) -> anyhow::Result<Box<[u8]>> {
         let (offset, size) = self
             .entries
             .get(name)
             .ok_or(anyhow::anyhow!("File not found"))?;
         let mut buffer = vec![0u8; *size as usize];
-        self.reader.seek(std::io::SeekFrom::Start(*offset))?;
-        self.reader.read_exact(&mut buffer)?;
+
+        let mut reader = BufReader::new(File::open(self.path.as_path())?);
+        reader.seek(std::io::SeekFrom::Start(*offset))?;
+        reader.read_exact(&mut buffer)?;
+
         Ok(buffer.into_boxed_slice())
     }
 

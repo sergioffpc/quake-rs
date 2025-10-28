@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 quake-animation = { path = "../quake-animation" }
-quake-command = { path = "../quake-command" }
+quake-console = { path = "../quake-console" }
 quake-model = { path = "../quake-model" }
 quake-resource = { path = "../quake-resource" }
+anyhow = "1.0.100"
