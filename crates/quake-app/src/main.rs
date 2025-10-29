@@ -9,7 +9,8 @@ impl App {
         P: AsRef<std::path::Path>,
     {
         let resources = quake_resource::Resources::new(resources_path)?;
-        let console = quake_console::Console::new(&resources);
+        let mut console = quake_console::Console::default();
+        quake_console::register_builtin_commands(&mut console, &resources);
 
         Ok(Self { resources, console })
     }
@@ -17,6 +18,6 @@ impl App {
 
 fn main() {
     let mut app = App::new("resources/").unwrap();
-    app.console.add_text("exec quake.rc");
+    app.console.append_script("exec quake.rc");
     app.console.execute(&app.resources);
 }
