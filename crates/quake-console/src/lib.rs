@@ -1,5 +1,115 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
+
+pub struct Console {
+    resources: Rc<RefCell<quake_resource::Resources>>,
+    console_variables: ConsoleVariables,
+    command_aliases: CommandAliases,
+    command_buffer: CommandBuffer,
+    command_registry: CommandRegistry,
+}
+
+impl Console {
+    pub fn new(resources: Rc<RefCell<quake_resource::Resources>>) -> Self {
+        Console {
+            resources,
+            console_variables: ConsoleVariables::default(),
+            command_aliases: CommandAliases::default(),
+            command_buffer: CommandBuffer::default(),
+            command_registry: CommandRegistry::default(),
+        }
+    }
+
+    pub fn register_command<C>(&mut self, name: &str, command: C)
+    where
+        C: Fn(&mut Console, &[&str]) + 'static,
+    {
+        self.command_registry.register_command(name, command);
+    }
+
+    pub fn unregister_command(&mut self, name: &str) {
+        self.command_registry.unregister_command(name);
+    }
+
+    pub fn get_variable<T>(&self, name: &str) -> Option<T>
+    where
+        T: std::str::FromStr,
+    {
+        self.console_variables.get(name)
+    }
+
+    pub fn set_variable(&mut self, name: &str, value: &str) {
+        self.console_variables.set(name, value);
+    }
+
+    pub fn prepend_script(&mut self, text: &str) {
+        self.command_buffer.push_front(text);
+    }
+
+    pub fn append_script(&mut self, text: &str) {
+        self.command_buffer.push_back(text);
+    }
+
+    pub fn execute(&mut self) {
+        while let Some(command_line) = self.command_buffer.pop_front() {
+            let mut args = command_line.split_whitespace();
+            let command_name = args.next().unwrap();
+            let command_args = args.collect::<Vec<_>>();
+
+            println!("[{}] {}", command_name, command_args.join(" "));
+
+            if let Some(command_text) = self.command_aliases.get_alias(command_name) {
+                self.command_buffer.push_front(command_text);
+                continue;
+            }
+
+            if let Some(command_handler) = self.command_registry.get_command(command_name).cloned()
+            {
+                command_handler(self, &command_args);
+                continue;
+            }
+
+            let variable_name = command_name;
+            let variable_arg = command_args.join(" ");
+            self.console_variables.set(variable_name, &variable_arg);
+        }
+    }
+
+    pub fn register_builtin_commands(&mut self) {
+        self.register_alias_command();
+        self.register_exec_command();
+    }
+
+    fn register_alias_command(&mut self) {
+        self.command_registry
+            .register_command("alias", move |console, args| {
+                let alias = args[0];
+                if args.len() > 1 {
+                    let s = args[1..].join(" ");
+                    let command_text = s
+                        .strip_prefix('"')
+                        .and_then(|s| s.strip_suffix('"'))
+                        .unwrap_or(&s)
+                        .replace(";", "\n");
+                    console.command_aliases.register_alias(alias, &command_text);
+                } else {
+                    console.command_aliases.unregister_alias(alias);
+                }
+            });
+    }
+
+    fn register_exec_command(&mut self) {
+        let resources = self.resources.clone();
+        self.command_registry
+            .register_command("exec", move |console, args| {
+                let file_name = args[0];
+                if let Ok(file_contents) = resources.borrow_mut().by_name::<String>(file_name) {
+                    console.prepend_script(&file_contents);
+                }
+            });
+    }
+}
 
 #[derive(Default)]
 struct ConsoleVariables {
@@ -16,47 +126,6 @@ impl ConsoleVariables {
 
     fn set(&mut self, name: &str, value: &str) {
         self.console.insert(name.to_string(), value.to_string());
-    }
-}
-
-#[derive(Default)]
-pub struct Console {
-    console_variables: ConsoleVariables,
-    command_aliases: CommandAliases,
-    command_buffer: CommandBuffer,
-    command_registry: CommandRegistry,
-}
-
-impl Console {
-    pub fn prepend_script(&mut self, text: &str) {
-        self.command_buffer.push_front(text);
-    }
-
-    pub fn append_script(&mut self, text: &str) {
-        self.command_buffer.push_back(text);
-    }
-
-    pub fn execute(&mut self, resources: &quake_resource::Resources) {
-        while let Some(command_line) = self.command_buffer.pop_front() {
-            let mut args = command_line.split_whitespace();
-            let command_name = args.next().unwrap();
-            let command_args = args.collect::<Vec<_>>();
-
-            if let Some(command_text) = self.command_aliases.get_alias(command_name) {
-                self.command_buffer.push_front(command_text);
-                continue;
-            }
-
-            if let Some(command_handler) = self.command_registry.get_command(command_name).cloned()
-            {
-                command_handler(self, resources, &command_args);
-                continue;
-            }
-
-            let variable_name = command_name;
-            let variable_arg = command_args.join(" ");
-            self.console_variables.set(variable_name, &variable_arg);
-        }
     }
 }
 
@@ -109,7 +178,7 @@ impl CommandBuffer {
     }
 }
 
-type Command = Rc<dyn Fn(&mut Console, &quake_resource::Resources, &[&str])>;
+type Command = Rc<dyn Fn(&mut Console, &[&str])>;
 
 #[derive(Default)]
 struct CommandRegistry {
@@ -119,7 +188,7 @@ struct CommandRegistry {
 impl CommandRegistry {
     fn register_command<C>(&mut self, name: &str, command: C)
     where
-        C: Fn(&mut Console, &quake_resource::Resources, &[&str]) + 'static,
+        C: Fn(&mut Console, &[&str]) + 'static,
     {
         self.commands.insert(name.to_string(), Rc::new(command));
     }
@@ -131,39 +200,4 @@ impl CommandRegistry {
     fn get_command(&self, name: &str) -> Option<&Command> {
         self.commands.get(name)
     }
-}
-
-pub fn register_builtin_commands(console: &mut Console, resources: &quake_resource::Resources) {
-    register_alias_command(console);
-    register_exec_command(console, resources);
-}
-
-fn register_alias_command(console: &mut Console) {
-    console
-        .command_registry
-        .register_command("alias", move |console, _, args| {
-            let alias = args[0];
-            if args.len() > 1 {
-                let s = args[1..].join(" ");
-                let command_text = s
-                    .strip_prefix('"')
-                    .and_then(|s| s.strip_suffix('"'))
-                    .unwrap_or(&s)
-                    .replace(";", "\n");
-                console.command_aliases.register_alias(alias, &command_text);
-            } else {
-                console.command_aliases.unregister_alias(alias);
-            }
-        });
-}
-
-fn register_exec_command(console: &mut Console, resources: &quake_resource::Resources) {
-    console
-        .command_registry
-        .register_command("exec", move |console, resources, args| {
-            let file_name = args[0];
-            if let Ok(file_contents) = resources.by_name::<String>(file_name) {
-                console.prepend_script(&file_contents);
-            }
-        });
 }
