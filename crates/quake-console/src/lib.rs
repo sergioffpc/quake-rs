@@ -2,12 +2,20 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ExecutionControlFlow {
+    Running,
+    Suspended,
+    Stopped,
+}
+
 pub struct Console {
     resources: Rc<RefCell<quake_resource::Resources>>,
     console_variables: ConsoleVariables,
     command_aliases: CommandAliases,
     command_buffer: CommandBuffer,
     command_registry: CommandRegistry,
+    execution_control_flow: ExecutionControlFlow,
 }
 
 impl Console {
@@ -18,6 +26,7 @@ impl Console {
             command_aliases: CommandAliases::default(),
             command_buffer: CommandBuffer::default(),
             command_registry: CommandRegistry::default(),
+            execution_control_flow: ExecutionControlFlow::Stopped,
         }
     }
 
@@ -52,21 +61,22 @@ impl Console {
     }
 
     pub fn execute(&mut self) {
+        self.execution_control_flow = ExecutionControlFlow::Running;
         while let Some(command_line) = self.command_buffer.pop_front() {
             let mut args = command_line.split_whitespace();
             let command_name = args.next().unwrap();
             let command_args = args.collect::<Vec<_>>();
 
-            println!("[{}] {}", command_name, command_args.join(" "));
-
             if let Some(command_text) = self.command_aliases.get_alias(command_name) {
                 self.command_buffer.push_front(command_text);
                 continue;
             }
-
             if let Some(command_handler) = self.command_registry.get_command(command_name).cloned()
             {
                 command_handler(self, &command_args);
+                if self.execution_control_flow == ExecutionControlFlow::Suspended {
+                    break;
+                }
                 continue;
             }
 
@@ -74,11 +84,13 @@ impl Console {
             let variable_arg = command_args.join(" ");
             self.console_variables.set(variable_name, &variable_arg);
         }
+        self.execution_control_flow = ExecutionControlFlow::Stopped;
     }
 
     pub fn register_builtin_commands(&mut self) {
         self.register_alias_command();
         self.register_exec_command();
+        self.register_wait_command();
     }
 
     fn register_alias_command(&mut self) {
@@ -107,6 +119,13 @@ impl Console {
                 if let Ok(file_contents) = resources.borrow_mut().by_name::<String>(file_name) {
                     console.prepend_script(&file_contents);
                 }
+            });
+    }
+
+    fn register_wait_command(&mut self) {
+        self.command_registry
+            .register_command("wait", move |console, _| {
+                console.execution_control_flow = ExecutionControlFlow::Suspended;
             });
     }
 }
@@ -159,22 +178,32 @@ impl CommandBuffer {
     }
 
     fn push_back(&mut self, text: &str) {
-        text.lines()
-            .map(|line| line.trim())
-            .filter(|line| !line.is_empty() && !line.starts_with("//"))
-            .for_each(|line| {
-                self.command_buffer.push_back(line.to_string());
-            });
+        self.process_lines(text).for_each(|line| {
+            self.command_buffer.push_back(line);
+        });
     }
 
     fn push_front(&mut self, text: &str) {
-        let lines = text
-            .lines()
-            .map(|line| line.trim())
-            .filter(|line| !line.is_empty() && !line.starts_with("//"));
-        lines.rev().for_each(|line| {
-            self.command_buffer.push_front(line.to_string());
-        })
+        self.process_lines(text)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .for_each(|line| {
+                self.command_buffer.push_front(line);
+            });
+    }
+
+    fn process_lines<'a>(&self, text: &'a str) -> impl Iterator<Item = String> + 'a {
+        text.lines()
+            .map(|line| {
+                let trimmed = line.trim();
+                if let Some(comment_position) = trimmed.find("//") {
+                    line[..comment_position].trim().to_string()
+                } else {
+                    trimmed.to_string()
+                }
+            })
+            .filter(|line| !line.is_empty())
     }
 }
 
