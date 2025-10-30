@@ -75,5 +75,7 @@ impl quake_window::WindowEventHandler for App {
 
     fn on_redraw_requested(&mut self) {
         self.console.execute();
+
+        self.renderer.as_mut().unwrap().present().unwrap();
     }
 }
