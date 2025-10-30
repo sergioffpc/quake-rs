@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 quake-console = { version = "0.1.0", path = "../quake-console" }
+
+tracing = { version = "0.1.41", features = ["log"] }

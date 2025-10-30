@@ -1,11 +1,18 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use tracing::log::{info, trace};
 
 pub trait AppHandler {
     fn on_created(&mut self);
 }
 
 pub fn run_app() -> anyhow::Result<()> {
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
     let mut app = App::new("resources/")?;
     app.on_created();
 
@@ -78,6 +85,8 @@ impl quake_window::WindowEventHandler for App {
     }
 
     fn on_frame_update(&mut self, delta_time: f64) {
+        trace!("Frame update with delta time: {}s", delta_time);
+
         self.console.execute();
     }
 }

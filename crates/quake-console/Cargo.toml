@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 quake-resource = { path = "../quake-resource" }
+
+tracing = { version = "0.1.41", features = ["log"] }

@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use tracing::trace;
 
 #[derive(Debug, Default)]
 pub struct Input {
@@ -10,6 +11,8 @@ pub struct Input {
 
 impl Input {
     pub fn on_key(&self, key: &str) -> Option<String> {
+        trace!("Key pressed: {}", key);
+
         let key = self.key_mapping.get(key);
         self.key_bindings.borrow().get(&key)
     }
@@ -124,19 +127,6 @@ impl Default for KeyMapping {
         key_mapping.insert("ShiftLeft".to_string(), "SHIFT".to_string());
         key_mapping.insert("ShiftRight".to_string(), "SHIFT".to_string());
 
-        key_mapping.insert("F1".to_string(), "F1".to_string());
-        key_mapping.insert("F2".to_string(), "F2".to_string());
-        key_mapping.insert("F3".to_string(), "F3".to_string());
-        key_mapping.insert("F4".to_string(), "F4".to_string());
-        key_mapping.insert("F5".to_string(), "F5".to_string());
-        key_mapping.insert("F6".to_string(), "F6".to_string());
-        key_mapping.insert("F7".to_string(), "F7".to_string());
-        key_mapping.insert("F8".to_string(), "F8".to_string());
-        key_mapping.insert("F9".to_string(), "F9".to_string());
-        key_mapping.insert("F10".to_string(), "F10".to_string());
-        key_mapping.insert("F11".to_string(), "F11".to_string());
-        key_mapping.insert("F12".to_string(), "F12".to_string());
-
         key_mapping.insert("Insert".to_string(), "INS".to_string());
         key_mapping.insert("Delete".to_string(), "DEL".to_string());
         key_mapping.insert("PageDown".to_string(), "PGDN".to_string());
@@ -153,8 +143,6 @@ impl Default for KeyMapping {
         key_mapping.insert("ScrollUp".to_string(), "MWHEELUP".to_string());
         key_mapping.insert("ScrollDown".to_string(), "MWHEELDOWN".to_string());
 
-        Self {
-            key_mapping: HashMap::new(),
-        }
+        Self { key_mapping }
     }
 }

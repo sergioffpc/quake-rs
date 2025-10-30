@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
+use tracing::log::info;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ExecutionControlFlow {
@@ -68,11 +69,19 @@ impl Console {
             let command_args = args.collect::<Vec<_>>();
 
             if let Some(command_text) = self.command_aliases.get_alias(command_name) {
+                info!("Executing alias: {}", command_text);
+
                 self.command_buffer.push_front(command_text);
                 continue;
             }
             if let Some(command_handler) = self.command_registry.get_command(command_name).cloned()
             {
+                info!(
+                    "Executing command: {} {}",
+                    command_name,
+                    command_args.join(" ")
+                );
+
                 command_handler(self, &command_args);
                 if self.execution_control_flow == ExecutionControlFlow::Suspended {
                     break;
@@ -82,6 +91,8 @@ impl Console {
 
             let variable_name = command_name;
             let variable_arg = command_args.join(" ");
+            info!("Setting variable: {} = {}", variable_name, variable_arg);
+
             self.console_variables.set(variable_name, &variable_arg);
         }
         self.execution_control_flow = ExecutionControlFlow::Stopped;
