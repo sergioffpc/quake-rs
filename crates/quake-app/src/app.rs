@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use tracing::log::{info, trace};
+use tracing::log::trace;
 
 pub trait AppHandler {
     fn on_created(&mut self);
@@ -23,7 +23,7 @@ struct App {
     input: quake_input::Input,
     resources: Rc<RefCell<quake_resource::Resources>>,
     renderer: Option<quake_renderer::Renderer>,
-    console: quake_console::Console,
+    console: quake_console::console::Console,
 }
 
 impl App {
@@ -33,7 +33,7 @@ impl App {
     {
         let input = quake_input::Input::default();
         let resources = Rc::new(RefCell::new(quake_resource::Resources::new(path)?));
-        let console = quake_console::Console::new(resources.clone());
+        let console = quake_console::console::Console::new(resources.clone());
 
         Ok(Self {
             input,
