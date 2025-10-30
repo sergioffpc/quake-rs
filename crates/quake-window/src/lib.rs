@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -52,6 +53,8 @@ pub trait WindowEventHandler {
     fn on_key_pressed(&mut self, key: &str);
 
     fn on_redraw_requested(&mut self);
+
+    fn on_frame_update(&mut self, delta_time: f64);
 }
 
 pub fn run_app<H>(handler: H) -> anyhow::Result<()>
@@ -68,6 +71,7 @@ where
 struct WindowApp {
     window: Option<Arc<Window>>,
     handler: Box<dyn WindowHandler>,
+    last_frame_time: Instant,
 }
 
 impl WindowApp {
@@ -75,6 +79,7 @@ impl WindowApp {
         Self {
             window: None,
             handler,
+            last_frame_time: Instant::now(),
         }
     }
 }
@@ -102,7 +107,8 @@ impl ApplicationHandler for WindowApp {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        if window_id != self.window.as_ref().unwrap().id() {
+        let window = self.window.as_ref().unwrap();
+        if window_id != window.id() {
             return;
         }
 
@@ -125,10 +131,17 @@ impl ApplicationHandler for WindowApp {
                 self.handler.on_key_pressed(&key);
             }
             WindowEvent::RedrawRequested => {
+                window.pre_present_notify();
                 self.handler.on_redraw_requested();
-                self.window.as_ref().unwrap().request_redraw();
             }
             _ => (),
         }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        self.handler
+            .on_frame_update(self.last_frame_time.elapsed().as_secs_f64());
+        self.last_frame_time = Instant::now();
+        self.window.as_ref().unwrap().request_redraw();
     }
 }
