@@ -8,5 +8,5 @@ members = [
     "crates/quake-input",
     "crates/quake-map",
     "crates/quake-model",
-    "crates/quake-program",
+    "crates/quake-program", "crates/quake-renderer",
     "crates/quake-resource"]

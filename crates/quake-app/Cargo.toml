@@ -9,3 +9,4 @@ quake-input = { path = "../quake-input" }
 quake-resource = { path = "../quake-resource" }
 
 anyhow = "1.0.100"
+winit = "0.30.12"
