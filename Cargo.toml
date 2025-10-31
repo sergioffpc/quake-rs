@@ -12,3 +12,11 @@ members = [
     "crates/quake-renderer",
     "crates/quake-resource",
     "crates/quake-window"]
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+byteorder = "1.5.0"
+glam = { version = "0.30.9", features = ["bytemuck", "encase"] }
+pollster = "0.4.0"
+tracing = { version = "0.1.41", features = ["log"] }
+wgpu = "27.0.1"

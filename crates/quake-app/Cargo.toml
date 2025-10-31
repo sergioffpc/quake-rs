@@ -10,6 +10,9 @@ quake-resource = { path = "../quake-resource" }
 quake-renderer = { path = "../quake-renderer" }
 quake-window = { path = "../quake-window" }
 
-anyhow = "1.0.100"
+anyhow.workspace = true
+pollster.workspace = true
+tracing.workspace = true
+wgpu.workspace = true
+
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
-tracing = { version = "0.1.41", features = ["log"] }

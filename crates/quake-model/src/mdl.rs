@@ -37,6 +37,7 @@ impl quake_resource::FromBytes for Mdl {
 pub struct Mdl {
     pub bounding_volume: quake_collision::BoundingVolume,
     pub eye_position: glam::Vec3,
+    pub vertices_count: u32,
     pub texture_width: u32,
     pub texture_height: u32,
     pub textures: Box<[Texture]>,
@@ -85,12 +86,19 @@ impl Mdl {
             Self::read_textures(&mut reader, textures_count, texture_width, texture_height)?;
         let texture_coords = Self::read_texture_coords(&mut reader, vertices_count)?;
         let triangles = Self::read_triangles(&mut reader, triangles_count)?;
-        let frames =
-            Self::read_frames(&mut reader, frames_count, vertices_count, scale, translate)?;
+        let frames = Self::read_frames(
+            &mut reader,
+            frames_count,
+            vertices_count,
+            &triangles,
+            scale,
+            translate,
+        )?;
 
         Ok(Self {
             bounding_volume,
             eye_position,
+            vertices_count,
             texture_width,
             texture_height,
             textures,
@@ -153,6 +161,7 @@ impl Mdl {
         reader: &mut R,
         frames_count: u32,
         vertices_count: u32,
+        triangles: &[Triangle],
         scale: glam::Vec3,
         translate: glam::Vec3,
     ) -> anyhow::Result<Box<[Frame]>>
@@ -161,7 +170,7 @@ impl Mdl {
     {
         let mut frames = Vec::with_capacity(frames_count as usize);
         for _ in 0..frames_count {
-            let frame = Frame::from_reader(reader, vertices_count, scale, translate)?;
+            let frame = Frame::from_reader(reader, vertices_count, triangles, scale, translate)?;
             frames.push(frame);
         }
 
@@ -169,28 +178,18 @@ impl Mdl {
     }
 }
 
-fn read_u32_vector3<R>(reader: &mut R) -> anyhow::Result<glam::UVec3>
-where
-    R: std::io::Read,
-{
-    Ok([
-        reader.read_u32::<LittleEndian>()?,
-        reader.read_u32::<LittleEndian>()?,
-        reader.read_u32::<LittleEndian>()?,
-    ]
-    .into())
-}
-
 fn read_f32_vector3<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
 where
     R: std::io::Read,
 {
-    Ok([
+    let vector = [
         reader.read_f32::<LittleEndian>()?,
         reader.read_f32::<LittleEndian>()?,
         reader.read_f32::<LittleEndian>()?,
-    ]
-    .into())
+    ];
+
+    // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
+    Ok([vector[0], vector[2], -vector[1]].into())
 }
 
 fn read_scaled_position<R>(
@@ -201,12 +200,14 @@ fn read_scaled_position<R>(
 where
     R: std::io::Read,
 {
-    Ok([
+    let vector = [
         reader.read_u8()? as f32 * scale[0] + translate[0],
         reader.read_u8()? as f32 * scale[1] + translate[1],
         reader.read_u8()? as f32 * scale[2] + translate[2],
-    ]
-    .into())
+    ];
+
+    // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
+    Ok([vector[0], vector[2], -vector[1]].into())
 }
 
 fn read_null_terminated_string<R>(reader: &mut R, buffer_size: usize) -> anyhow::Result<String>
@@ -353,7 +354,16 @@ impl Triangle {
         R: std::io::Read + std::io::Seek,
     {
         let faces_front = reader.read_u32::<LittleEndian>()? == 1;
-        let indices = read_u32_vector3(reader)?;
+
+        let indices = [
+            reader.read_u32::<LittleEndian>()?,
+            reader.read_u32::<LittleEndian>()?,
+            reader.read_u32::<LittleEndian>()?,
+        ];
+
+        // Reverses triangle winding to convert from right-handed to left-handed
+        let indices = [indices[0], indices[2], indices[1]].into();
+
         Ok(Self {
             faces_front,
             indices,
@@ -371,6 +381,7 @@ impl Frame {
     pub fn from_reader<R>(
         reader: &mut R,
         vertices_count: u32,
+        triangles: &[Triangle],
         scale: glam::Vec3,
         translate: glam::Vec3,
     ) -> anyhow::Result<Self>
@@ -382,12 +393,14 @@ impl Frame {
             0 => Frame::Single(FrameSingle::from_reader(
                 reader,
                 vertices_count,
+                triangles,
                 scale,
                 translate,
             )?),
             _ => Frame::Group(FrameGroup::from_reader(
                 reader,
                 vertices_count,
+                triangles,
                 scale,
                 translate,
             )?),
@@ -401,12 +414,14 @@ pub struct FrameSingle {
     pub name: String,
     pub bounding_volume: quake_collision::BoundingVolume,
     pub positions: Box<[glam::Vec3]>,
+    pub normals: Box<[glam::Vec3]>,
 }
 
 impl FrameSingle {
     pub fn from_reader<R>(
         reader: &mut R,
         vertices_count: u32,
+        triangles: &[Triangle],
         scale: glam::Vec3,
         translate: glam::Vec3,
     ) -> anyhow::Result<Self>
@@ -426,11 +441,21 @@ impl FrameSingle {
             positions.push(position);
         }
         let positions = positions.into_boxed_slice();
+        let normals = calculate_normals_for_buffers(
+            &positions,
+            triangles
+                .iter()
+                .flat_map(|t| [t.indices.x, t.indices.y, t.indices.z])
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
+        .into_boxed_slice();
 
         Ok(FrameSingle {
             name,
             bounding_volume,
             positions,
+            normals,
         })
     }
 }
@@ -445,6 +470,7 @@ impl FrameGroup {
     pub fn from_reader<R>(
         reader: &mut R,
         vertices_count: u32,
+        triangles: &[Triangle],
         scale: glam::Vec3,
         translate: glam::Vec3,
     ) -> anyhow::Result<Self>
@@ -465,6 +491,7 @@ impl FrameGroup {
             subframes.push(FrameSingle::from_reader(
                 reader,
                 vertices_count,
+                triangles,
                 scale,
                 translate,
             )?);
@@ -526,4 +553,34 @@ impl Flags {
     pub fn from_i32(v: i32) -> Self {
         Flags::from_bits_truncate(v)
     }
+}
+
+fn calculate_normals_for_buffers(positions: &[glam::Vec3], indices: &[u32]) -> Vec<glam::Vec3> {
+    let mut normals = vec![glam::Vec3::ZERO; positions.len()];
+
+    for idx in indices.chunks_exact(3) {
+        let (idx0, idx1, idx2) = match *idx {
+            [idx0, idx1, idx2] => (idx0, idx1, idx2),
+            _ => unsafe { std::hint::unreachable_unchecked() },
+        };
+
+        let pos1 = unsafe { *positions.get_unchecked(idx0 as usize) };
+        let pos2 = unsafe { *positions.get_unchecked(idx1 as usize) };
+        let pos3 = unsafe { *positions.get_unchecked(idx2 as usize) };
+
+        let edge1 = pos2 - pos1;
+        let edge2 = pos3 - pos1;
+
+        let normal = edge1.cross(edge2);
+
+        unsafe { *normals.get_unchecked_mut(idx0 as usize) += normal };
+        unsafe { *normals.get_unchecked_mut(idx1 as usize) += normal };
+        unsafe { *normals.get_unchecked_mut(idx2 as usize) += normal };
+    }
+
+    for normal in normals.iter_mut() {
+        *normal = normal.normalize_or_zero();
+    }
+
+    normals
 }

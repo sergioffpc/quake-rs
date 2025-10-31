@@ -7,5 +7,6 @@ edition = "2024"
 quake-collision = { path = "../quake-collision" }
 quake-model = { path = "../quake-model" }
 
-glam = "0.30.8"
+glam.workspace = true
+
 indexmap = "2.12.0"

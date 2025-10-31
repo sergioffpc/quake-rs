@@ -7,7 +7,8 @@ edition = "2024"
 quake-collision = { path = "../quake-collision" }
 quake-resource = { path = "../quake-resource" }
 
-byteorder = "1.5.0"
-anyhow = "1.0.100"
+anyhow.workspace = true
+byteorder.workspace = true
+glam.workspace = true
+
 bitflags = "2.10.0"
-glam = "0.30.8"

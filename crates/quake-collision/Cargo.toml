@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.100"
-glam = "0.30.8"
+anyhow.workspace = true
+glam.workspace = true

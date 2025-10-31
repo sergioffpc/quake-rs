@@ -1,13 +1,29 @@
+mod alias;
+mod animation;
+mod camera;
+mod material;
+mod mesh;
+mod model;
+
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     surface_config: wgpu::SurfaceConfiguration,
-    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
+
+    camera: Option<camera::Camera>,
+    materials: Vec<material::Material>,
+    meshes: Vec<mesh::AliasMesh>,
 }
 
 impl Renderer {
-    pub fn new<W>(target: W, width: u32, height: u32) -> anyhow::Result<Self>
+    pub fn new<W>(
+        instance: &wgpu::Instance,
+        adapter: &wgpu::Adapter,
+        target: W,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<Self>
     where
         W: raw_window_handle::HasWindowHandle
             + raw_window_handle::HasDisplayHandle
@@ -15,16 +31,7 @@ impl Renderer {
             + Sync
             + 'static,
     {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            flags: wgpu::InstanceFlags::DEBUG | wgpu::InstanceFlags::VALIDATION,
-            ..Default::default()
-        });
         let surface = instance.create_surface(wgpu::SurfaceTarget::from(target))?;
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            force_fallback_adapter: false,
-            compatible_surface: Some(&surface),
-        }))?;
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
                 label: Some("Renderer device"),
@@ -36,9 +43,12 @@ impl Renderer {
         Ok(Self {
             surface,
             surface_config,
-            adapter,
             device,
             queue,
+
+            camera: None,
+            materials: Vec::default(),
+            meshes: Vec::default(),
         })
     }
 

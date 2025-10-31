@@ -20,6 +20,9 @@ pub fn run_app() -> anyhow::Result<()> {
 }
 
 struct App {
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
+
     input: quake_input::Input,
     resources: Rc<RefCell<quake_resource::Resources>>,
     renderer: Option<quake_renderer::Renderer>,
@@ -31,11 +34,24 @@ impl App {
     where
         P: AsRef<std::path::Path>,
     {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            flags: wgpu::InstanceFlags::DEBUG | wgpu::InstanceFlags::VALIDATION,
+            ..Default::default()
+        });
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: false,
+            compatible_surface: None,
+        }))?;
+
         let input = quake_input::Input::default();
         let resources = Rc::new(RefCell::new(quake_resource::Resources::new(path)?));
         let console = quake_console::console::Console::new(resources.clone());
 
         Ok(Self {
+            instance,
+            adapter,
+
             input,
             resources,
             renderer: None,
@@ -67,8 +83,14 @@ impl quake_window::WindowHandler for App {}
 
 impl quake_window::WindowLifecycleHandler for App {
     fn on_created(&mut self, window: quake_window::WindowTarget) {
-        let renderer =
-            quake_renderer::Renderer::new(window.clone(), window.width(), window.height()).unwrap();
+        let renderer = quake_renderer::Renderer::new(
+            &self.instance,
+            &self.adapter,
+            window.clone(),
+            window.width(),
+            window.height(),
+        )
+        .unwrap();
         self.renderer = Some(renderer);
     }
 }
