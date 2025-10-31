@@ -80,13 +80,15 @@ impl quake_window::WindowEventHandler for App {
         }
     }
 
-    fn on_redraw_requested(&mut self) {
-        self.renderer.as_mut().unwrap().present().unwrap();
-    }
-
-    fn on_frame_update(&mut self, delta_time: f64) {
+    fn on_update_frame(&mut self, delta_time: f64) {
         trace!("Frame update with delta time: {}s", delta_time);
 
         self.console.execute();
+    }
+
+    fn on_render_frame(&mut self) {}
+
+    fn on_present_frame(&mut self) {
+        self.renderer.as_mut().unwrap().present().unwrap();
     }
 }

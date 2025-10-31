@@ -52,9 +52,11 @@ impl winit::raw_window_handle::HasDisplayHandle for WindowTarget {
 pub trait WindowEventHandler {
     fn on_key_pressed(&mut self, key: &str);
 
-    fn on_redraw_requested(&mut self);
+    fn on_update_frame(&mut self, delta_time: f64);
 
-    fn on_frame_update(&mut self, delta_time: f64);
+    fn on_render_frame(&mut self);
+
+    fn on_present_frame(&mut self);
 }
 
 pub fn run_app<H>(handler: H) -> anyhow::Result<()>
@@ -131,8 +133,10 @@ impl ApplicationHandler for WindowApp {
                 self.handler.on_key_pressed(&key);
             }
             WindowEvent::RedrawRequested => {
+                self.handler.on_render_frame();
+
                 window.pre_present_notify();
-                self.handler.on_redraw_requested();
+                self.handler.on_present_frame();
             }
             _ => (),
         }
@@ -140,7 +144,7 @@ impl ApplicationHandler for WindowApp {
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         self.handler
-            .on_frame_update(self.last_frame_time.elapsed().as_secs_f64());
+            .on_update_frame(self.last_frame_time.elapsed().as_secs_f64());
         self.last_frame_time = Instant::now();
         self.window.as_ref().unwrap().request_redraw();
     }
