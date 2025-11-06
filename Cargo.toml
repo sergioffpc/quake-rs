@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["crates/quake-resources", "quake-client", "quake-server"]
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }

@@ -1,0 +1,9 @@
+[package]
+name = "quake-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quake-resources = { path = "../crates/quake-resources" }
+
+tracing-subscriber.workspace = true
