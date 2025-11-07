@@ -4,6 +4,7 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
+use tracing::log::debug;
 
 #[derive(Debug)]
 pub struct Pak {
@@ -30,7 +31,10 @@ impl Pak {
                 return T::from_bytes(&data);
             }
         }
-        Err(anyhow::anyhow!("File not found"))
+        Err(anyhow::anyhow!(
+            "File not found: {}",
+            name.replace("\\", " \\ ")
+        ))
     }
 
     pub fn file_names(&self) -> impl Iterator<Item = String> {
@@ -90,7 +94,7 @@ impl PakArchive {
         directory_count: u64,
     ) -> anyhow::Result<HashMap<String, (u64, u64)>>
     where
-        T: std::io::Read + std::io::Seek,
+        T: Read + Seek,
     {
         reader.seek(std::io::SeekFrom::Start(directory_offset))?;
         let mut entries = HashMap::with_capacity(directory_count as usize);
@@ -108,10 +112,12 @@ impl PakArchive {
     }
 
     fn by_name(&self, name: &str) -> anyhow::Result<Box<[u8]>> {
-        let (offset, size) = self
-            .entries
-            .get(name)
-            .ok_or(anyhow::anyhow!("File not found"))?;
+        debug!("Reading file from PAK: {}", name);
+
+        let (offset, size) = self.entries.get(name).ok_or(anyhow::anyhow!(
+            "File not found: {}",
+            name.replace("\\", " \\ ")
+        ))?;
         let mut buffer = vec![0u8; *size as usize];
 
         let mut reader = BufReader::new(File::open(self.path.as_path())?);

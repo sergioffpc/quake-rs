@@ -1,5 +1,5 @@
 use crate::bsp::MipTexture::BspTexture;
-use crate::{BoundingVolume, FromBytes};
+use crate::{read_f32_bounding_box, read_i16_bounding_box, BoundingVolume, FromBytes};
 use byteorder::{LittleEndian, ReadBytesExt};
 use nom::bytes::complete::take_while;
 use nom::character::complete::{char, multispace0};
@@ -8,20 +8,6 @@ use nom::multi::many0;
 use nom::sequence::delimited;
 use nom::Parser;
 use std::collections::HashMap;
-
-pub fn read_i16_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
-where
-    R: std::io::Read,
-{
-    BoundingVolume::read_bounding_box_with(reader, |r| read_i16_vector3_as_f32(r))
-}
-
-pub fn read_f32_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
-where
-    R: std::io::Read,
-{
-    BoundingVolume::read_bounding_box_with(reader, |r| read_f32_vector3(r))
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LumpType {
@@ -447,18 +433,6 @@ where
         reader.read_f32::<LittleEndian>()?,
         reader.read_f32::<LittleEndian>()?,
         reader.read_f32::<LittleEndian>()?,
-    ]
-    .into())
-}
-
-fn read_i16_vector3_as_f32<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
-where
-    R: std::io::Read,
-{
-    Ok([
-        reader.read_i16::<LittleEndian>()? as f32,
-        reader.read_i16::<LittleEndian>()? as f32,
-        reader.read_i16::<LittleEndian>()? as f32,
     ]
     .into())
 }

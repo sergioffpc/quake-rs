@@ -1,4 +1,6 @@
+use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
+use tracing::log::debug;
 
 mod bsp;
 mod mdl;
@@ -74,6 +76,8 @@ impl Resources {
     }
 
     fn load_from_filesystem<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
+        debug!("Loading file from filesystem: {}", name);
+
         let path = self
             .base_path
             .join(name)
@@ -83,23 +87,6 @@ impl Resources {
         let bytes = std::fs::read(path)?;
         T::from_bytes(&bytes)
     }
-}
-
-pub(crate) fn read_null_terminated_string<R>(
-    reader: &mut R,
-    buffer_size: usize,
-) -> anyhow::Result<String>
-where
-    R: std::io::Read,
-{
-    let mut name_buffer = vec![0u8; buffer_size];
-    reader.read_exact(&mut name_buffer)?;
-    let null_terminated_bytes: Vec<u8> = name_buffer
-        .iter()
-        .take_while(|&byte| *byte != 0)
-        .copied()
-        .collect();
-    Ok(String::from_utf8_lossy(&null_terminated_bytes).to_string())
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -274,4 +261,103 @@ impl BoundingVolume {
         ]
         .into()
     }
+}
+
+pub fn read_f32_bounding_sphere<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
+where
+    R: std::io::Read,
+{
+    BoundingVolume::read_bounding_sphere_at_origin_with(reader, |r| {
+        Ok(r.read_f32::<LittleEndian>()?)
+    })
+}
+
+pub fn read_i16_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
+where
+    R: std::io::Read,
+{
+    BoundingVolume::read_bounding_box_with(reader, |r| read_i16_vector3_as_f32(r))
+}
+
+pub fn read_f32_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
+where
+    R: std::io::Read,
+{
+    BoundingVolume::read_bounding_box_with(reader, |r| read_f32_vector3(r))
+}
+
+pub fn read_scaled_position_bounding_box<R>(
+    reader: &mut R,
+    scale: glam::Vec3,
+    translate: glam::Vec3,
+) -> anyhow::Result<BoundingVolume>
+where
+    R: std::io::Read,
+{
+    BoundingVolume::read_bounding_box_with(reader, |r| {
+        let point = read_scaled_position(r, scale, translate)?;
+        r.read_u8()? as f32;
+
+        Ok(point)
+    })
+}
+
+pub fn read_f32_vector3<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
+where
+    R: std::io::Read,
+{
+    let vector = [
+        reader.read_f32::<LittleEndian>()?,
+        reader.read_f32::<LittleEndian>()?,
+        reader.read_f32::<LittleEndian>()?,
+    ];
+
+    // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
+    Ok([vector[0], vector[2], -vector[1]].into())
+}
+
+pub fn read_i16_vector3_as_f32<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
+where
+    R: std::io::Read,
+{
+    let vector = [
+        reader.read_i16::<LittleEndian>()? as f32,
+        reader.read_i16::<LittleEndian>()? as f32,
+        reader.read_i16::<LittleEndian>()? as f32,
+    ];
+
+    // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
+    Ok([vector[0], vector[2], -vector[1]].into())
+}
+
+pub fn read_scaled_position<R>(
+    reader: &mut R,
+    scale: glam::Vec3,
+    translate: glam::Vec3,
+) -> anyhow::Result<glam::Vec3>
+where
+    R: std::io::Read,
+{
+    let vector = [
+        reader.read_u8()? as f32 * scale[0] + translate[0],
+        reader.read_u8()? as f32 * scale[1] + translate[1],
+        reader.read_u8()? as f32 * scale[2] + translate[2],
+    ];
+
+    // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
+    Ok([vector[0], vector[2], -vector[1]].into())
+}
+
+pub fn read_null_terminated_string<R>(reader: &mut R, buffer_size: usize) -> anyhow::Result<String>
+where
+    R: std::io::Read,
+{
+    let mut name_buffer = vec![0u8; buffer_size];
+    reader.read_exact(&mut name_buffer)?;
+    let null_terminated_bytes: Vec<u8> = name_buffer
+        .iter()
+        .take_while(|&byte| *byte != 0)
+        .copied()
+        .collect();
+    Ok(String::from_utf8_lossy(&null_terminated_bytes).to_string())
 }
