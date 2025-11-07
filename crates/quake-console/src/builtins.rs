@@ -20,6 +20,13 @@ pub fn alias() -> Command {
     })
 }
 
+pub fn echo() -> Command {
+    Box::new(move |ctx, args| {
+        writeln!(ctx.writer, "{}", args.join(" ")).unwrap();
+        ControlFlow::Poll
+    })
+}
+
 pub fn exec(resources: Rc<quake_resources::Resources>) -> Command {
     Box::new(move |ctx, args| {
         if let Ok(text) = resources.by_name::<String>(args[0]) {

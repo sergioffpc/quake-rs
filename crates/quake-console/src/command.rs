@@ -1,6 +1,5 @@
 use crate::ControlFlow;
 use std::collections::{HashMap, VecDeque};
-use tracing::log::debug;
 
 #[derive(Default)]
 pub struct CommandAliases {
@@ -122,27 +121,56 @@ impl CommandExecutor {
     pub fn execute(&mut self, context: &mut CommandContext, registry: &CommandRegistry) {
         self.control_flow = ControlFlow::Poll;
         while let Some(command_line) = context.buffer.pop_front() {
-            let mut args = command_line.split_whitespace();
-            let cmd_name = args.next().unwrap();
-            let cmd_args = args.collect::<Vec<_>>();
+            let (name, args) = self.parse_command_line(&command_line);
 
-            debug!("Executing command: {} {}", cmd_name, cmd_args.join(" "));
-
-            if let Some(command_text) = context.aliases.get(cmd_name) {
-                context.buffer.push_front(command_text);
+            if self.try_execute_alias(context, &name) {
                 continue;
             }
-            if let Some(command_fn) = registry.get(cmd_name) {
-                command_fn(context, &cmd_args);
+
+            if self.try_execute_command(context, registry, &name, &args) {
                 if self.control_flow == ControlFlow::Wait {
                     break;
                 }
                 continue;
             }
 
-            let var_name = cmd_name;
-            let var_args = cmd_args.join(" ");
-            context.variables.set(var_name, &var_args);
+            self.assign_variable(context, &name, &args);
         }
+    }
+
+    fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
+        let mut args = command_line.split_whitespace();
+        let name = args.next().unwrap_or("");
+        let args = args.collect::<Vec<_>>();
+        (name, args)
+    }
+
+    fn try_execute_alias(&self, context: &mut CommandContext, name: &str) -> bool {
+        if let Some(command_line) = context.aliases.get(name) {
+            context.buffer.push_front(command_line);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn try_execute_command(
+        &self,
+        context: &mut CommandContext,
+        registry: &CommandRegistry,
+        name: &str,
+        args: &[&str],
+    ) -> bool {
+        if let Some(command_fn) = registry.get(name) {
+            command_fn(context, args);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn assign_variable(&self, context: &mut CommandContext, name: &str, args: &[&str]) {
+        let value = args.join(" ");
+        context.variables.set(name, &value);
     }
 }

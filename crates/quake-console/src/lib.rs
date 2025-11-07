@@ -29,6 +29,7 @@ impl Console {
 
         let mut command_registry = command::CommandRegistry::default();
         command_registry.register_command("alias", builtins::alias());
+        command_registry.register_command("echo", builtins::echo());
         command_registry.register_command("exec", builtins::exec(resources.clone()));
         command_registry.register_command("quit", builtins::quit());
         command_registry.register_command("wait", builtins::wait());
