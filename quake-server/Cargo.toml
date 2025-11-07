@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+quake-console = { path = "../crates/quake-console" }
 quake-resources = { path = "../crates/quake-resources" }
 
 tracing-subscriber.workspace = true
+
+clap = { version = "4.5.51", features = ["derive"] }

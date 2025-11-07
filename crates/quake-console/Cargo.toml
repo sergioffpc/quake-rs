@@ -1,0 +1,12 @@
+[package]
+name = "quake-console"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quake-resources = { path = "../quake-resources" }
+
+anyhow.workspace = true
+
+rustyline = { version = "17.0.2", features = ["derive"] }
+tracing = { version = "0.1.41", features = ["log"] }
