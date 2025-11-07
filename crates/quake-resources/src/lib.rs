@@ -1,9 +1,9 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
-use tracing::log::debug;
 
-mod bsp;
-mod mdl;
+pub mod bsp;
+pub mod mdl;
+
 mod pak;
 mod wad;
 
@@ -76,8 +76,6 @@ impl Resources {
     }
 
     fn load_from_filesystem<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
-        debug!("Loading file from filesystem: {}", name);
-
         let path = self
             .base_path
             .join(name)

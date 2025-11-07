@@ -4,7 +4,6 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
-use tracing::log::debug;
 
 #[derive(Debug)]
 pub struct Pak {
@@ -112,8 +111,6 @@ impl PakArchive {
     }
 
     fn by_name(&self, name: &str) -> anyhow::Result<Box<[u8]>> {
-        debug!("Reading file from PAK: {}", name);
-
         let (offset, size) = self.entries.get(name).ok_or(anyhow::anyhow!(
             "File not found: {}",
             name.replace("\\", " \\ ")

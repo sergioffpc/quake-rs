@@ -1,8 +1,17 @@
+use crate::command::Command;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
 use std::rc::Rc;
 
-mod command;
+mod builtins;
+pub mod command;
+
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub enum ControlFlow {
+    #[default]
+    Poll,
+    Wait,
+}
 
 pub struct Console {
     command_buffer: command::CommandBuffer,
@@ -10,8 +19,6 @@ pub struct Console {
     command_variables: command::CommandVariables,
     command_registry: command::CommandRegistry,
     command_executor: command::CommandExecutor,
-
-    resources: Rc<quake_resources::Resources>,
 }
 
 impl Console {
@@ -21,34 +28,10 @@ impl Console {
         let command_variables = command::CommandVariables::default();
 
         let mut command_registry = command::CommandRegistry::default();
-        command_registry.register_command("alias", move |ctx, args| {
-            let alias = args[0];
-            if args.len() > 1 {
-                let s = args[1..].join(" ");
-                let command_text = s
-                    .strip_prefix('"')
-                    .and_then(|s| s.strip_suffix('"'))
-                    .unwrap_or(&s)
-                    .replace(";", "\n");
-                ctx.aliases.register_alias(alias, &command_text);
-            } else {
-                ctx.aliases.unregister_alias(alias);
-            }
-
-            command::ControlFlow::Poll
-        });
-
-        command_registry.register_command("exec", move |ctx, args| {
-            let file_name = args[0];
-            if let Ok(file_contents) = ctx.resources.by_name::<String>(file_name) {
-                ctx.buffer.push_front(&file_contents);
-            }
-
-            command::ControlFlow::Poll
-        });
-
-        command_registry.register_command("quit", move |_, _| std::process::exit(0));
-        command_registry.register_command("wait", move |_, _| command::ControlFlow::Wait);
+        command_registry.register_command("alias", builtins::alias());
+        command_registry.register_command("exec", builtins::exec(resources.clone()));
+        command_registry.register_command("quit", builtins::quit());
+        command_registry.register_command("wait", builtins::wait());
 
         let command_executor = command::CommandExecutor::default();
 
@@ -58,9 +41,15 @@ impl Console {
             command_variables,
             command_registry,
             command_executor,
-
-            resources,
         }
+    }
+
+    pub fn register_command(&mut self, name: &str, command: Command) {
+        self.command_registry.register_command(name, command);
+    }
+
+    pub fn unregister_command(&mut self, name: &str) {
+        self.command_registry.unregister_command(name);
     }
 
     pub fn prepend_text(&mut self, text: &str) {
@@ -76,7 +65,7 @@ impl Console {
             buffer: &mut self.command_buffer,
             aliases: &mut self.command_aliases,
             variables: &mut self.command_variables,
-            resources: &self.resources,
+            writer: Box::new(std::io::stdout()),
         };
 
         self.command_executor

@@ -1,6 +1,11 @@
 use clap::Parser;
 use std::path::PathBuf;
 use std::rc::Rc;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, EnvFilter};
+
+mod builtins;
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]
@@ -14,7 +19,6 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
@@ -22,5 +26,6 @@ fn main() {
 
     let resources = Rc::new(quake_resources::Resources::new(&args.base_path).unwrap());
     let mut console = quake_console::Console::new(resources.clone());
+    console.register_command("map", builtins::map(resources.clone()));
     console.repl().unwrap();
 }

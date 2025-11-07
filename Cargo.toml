@@ -4,5 +4,6 @@ members = ["crates/quake-console", "crates/quake-resources", "quake-client", "qu
 
 [workspace.dependencies]
 anyhow = "1.0.100"
+clap = { version = "4.5.51", features = ["derive"] }
 tracing = { version = "0.1.41", features = ["log"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }

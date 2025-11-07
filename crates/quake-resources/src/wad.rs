@@ -1,7 +1,6 @@
 use crate::read_null_terminated_string;
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
-use tracing::log::debug;
 
 impl crate::FromBytes for Wad {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
@@ -64,8 +63,6 @@ impl Wad {
     }
 
     pub fn by_name(&self, name: &str) -> anyhow::Result<WadEntry> {
-        debug!("Reading file from WAD: {}", name);
-
         use std::io::{Read, Seek};
         let (entry_offset, entry_size, entry_type) = self.entries.get(name).ok_or(
             anyhow::anyhow!("File not found: {}", name.replace("\\", " \\ ")),

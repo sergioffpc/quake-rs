@@ -1,3 +1,4 @@
+use crate::ControlFlow;
 use std::collections::{HashMap, VecDeque};
 use tracing::log::debug;
 
@@ -64,10 +65,10 @@ pub struct CommandContext<'a> {
     pub buffer: &'a mut CommandBuffer,
     pub aliases: &'a mut CommandAliases,
     pub variables: &'a mut CommandVariables,
-    pub resources: &'a quake_resources::Resources,
+    pub writer: Box<dyn std::io::Write>,
 }
 
-type Command = fn(&mut CommandContext, &[&str]) -> ControlFlow;
+pub type Command = Box<dyn Fn(&mut CommandContext, &[&str]) -> ControlFlow>;
 
 #[derive(Default)]
 pub struct CommandRegistry {
@@ -112,13 +113,6 @@ impl CommandVariables {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
-pub enum ControlFlow {
-    #[default]
-    Poll,
-    Wait,
-}
-
 #[derive(Default)]
 pub struct CommandExecutor {
     control_flow: ControlFlow,
@@ -138,7 +132,7 @@ impl CommandExecutor {
                 context.buffer.push_front(command_text);
                 continue;
             }
-            if let Some(command_fn) = registry.get(cmd_name).cloned() {
+            if let Some(command_fn) = registry.get(cmd_name) {
                 command_fn(context, &cmd_args);
                 if self.control_flow == ControlFlow::Wait {
                     break;
