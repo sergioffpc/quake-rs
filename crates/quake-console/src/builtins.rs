@@ -40,6 +40,15 @@ pub fn quit() -> Command {
     Box::new(|_, _| std::process::exit(0))
 }
 
+pub fn rlist(resources: Rc<quake_resources::Resources>) -> Command {
+    Box::new(move |ctx, _| {
+        resources.file_names().for_each(|name| {
+            writeln!(ctx.writer, "{}", name).unwrap();
+        });
+        ControlFlow::Poll
+    })
+}
+
 pub fn wait() -> Command {
     Box::new(|_, _| ControlFlow::Wait)
 }

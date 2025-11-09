@@ -2,6 +2,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
 
 pub mod bsp;
+pub mod dem;
 pub mod mdl;
 
 mod pak;

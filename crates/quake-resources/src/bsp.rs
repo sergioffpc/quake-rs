@@ -53,12 +53,6 @@ impl Lump {
     }
 }
 
-impl FromBytes for Bsp {
-    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-        Bsp::from_slice(bytes)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Bsp {
     pub entities: slotmap::SlotMap<EntityKey, Entity>,
@@ -422,6 +416,12 @@ impl Bsp {
             items.push(read_fn(&mut reader)?);
         }
         Ok(items.into_boxed_slice())
+    }
+}
+
+impl FromBytes for Bsp {
+    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        Bsp::from_slice(bytes)
     }
 }
 

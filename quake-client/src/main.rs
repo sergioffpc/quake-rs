@@ -29,5 +29,6 @@ fn main() {
     console.register_command("connect", builtins::connect());
     console.register_command("reconnect", builtins::reconnect());
     console.register_command("disconnect", builtins::disconnect());
+    console.register_command("playdemo", builtins::playdemo(resources.clone()));
     console.repl().unwrap();
 }
