@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 quake-console = { path = "../crates/quake-console" }
+quake-input = { path = "../crates/quake-input" }
 quake-resources = { path = "../crates/quake-resources" }
 
+anyhow.workspace = true
 clap.workspace = true
 tracing-subscriber.workspace = true
