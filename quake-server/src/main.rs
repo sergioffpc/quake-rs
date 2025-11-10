@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use tracing_subscriber::layer::SubscriberExt;
@@ -23,7 +24,9 @@ fn main() {
         .init();
 
     let args = Args::parse();
-    let resources = Rc::new(quake_resources::Resources::new(&args.base_path).unwrap());
+    let resources = Rc::new(RefCell::new(
+        quake_resources::Resources::new(&args.base_path).unwrap(),
+    ));
     let mut console = quake_console::Console::new(resources.clone());
     console.register_command("version", builtins::version());
     console.register_command("map", builtins::map(resources.clone()));

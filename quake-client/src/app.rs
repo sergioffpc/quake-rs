@@ -1,5 +1,6 @@
 use crate::builtins;
 use clap::Parser;
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use tracing_subscriber::layer::SubscriberExt;
@@ -33,7 +34,7 @@ pub fn run_app() -> anyhow::Result<()> {
 }
 
 struct App {
-    resources: Rc<quake_resources::Resources>,
+    resources: Rc<RefCell<quake_resources::Resources>>,
     console: quake_console::Console,
 
     audio_manager: Option<quake_audio::AudioManager>,
@@ -46,11 +47,12 @@ impl App {
     where
         P: AsRef<std::path::Path>,
     {
-        let resources = Rc::new(quake_resources::Resources::new(path)?);
+        let resources = Rc::new(RefCell::new(quake_resources::Resources::new(path)?));
         let mut console = quake_console::Console::new(resources.clone());
         console.register_command("connect", builtins::connect());
         console.register_command("reconnect", builtins::reconnect());
         console.register_command("disconnect", builtins::disconnect());
+        console.register_command("flush", builtins::flush(resources.clone()));
         console.register_command("playdemo", builtins::playdemo(resources.clone()));
         console.register_command("version", builtins::version());
 
@@ -83,8 +85,9 @@ impl quake_window::WindowLifecycleHandler for App {
 
         self.console.append_text("bind F1 \"cd play 2\"");
         self.console.append_text("bind F2 \"cd play 3\"");
-        self.console.append_text("bind F3 \"cd stop\"");
-        self.console.append_text("bind F4 \"cd resume\"");
+        self.console.append_text("bind F3 \"cd play 4\"");
+        self.console.append_text("bind F4 \"cd play 5\"");
+        self.console.append_text("bind F5 \"cd play 6\"");
     }
 
     fn on_destroyed(&self, window: quake_window::window::WindowHandle) {}

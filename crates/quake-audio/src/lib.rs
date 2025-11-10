@@ -11,7 +11,7 @@ pub struct AudioManager {
 impl AudioManager {
     pub fn new(
         console: &mut quake_console::Console,
-        resources: Rc<quake_resources::Resources>,
+        resources: Rc<RefCell<quake_resources::Resources>>,
     ) -> anyhow::Result<Self> {
         let manager = Rc::new(RefCell::new(
             kira::AudioManager::<kira::DefaultBackend>::new(kira::AudioManagerSettings::default())?,
@@ -23,6 +23,7 @@ impl AudioManager {
             "cd",
             builtins::cd(manager.clone(), channel.clone(), resources.clone()),
         );
+        console.register_command("soundlist", builtins::soundlist(resources.clone()));
 
         Ok(Self { manager, channel })
     }

@@ -1,6 +1,7 @@
 use crate::command::Command;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 mod builtins;
@@ -22,7 +23,7 @@ pub struct Console {
 }
 
 impl Console {
-    pub fn new(resources: Rc<quake_resources::Resources>) -> Self {
+    pub fn new(resources: Rc<RefCell<quake_resources::Resources>>) -> Self {
         let command_buffer = command::CommandBuffer::default();
         let command_aliases = command::CommandAliases::default();
         let command_variables = command::CommandVariables::default();

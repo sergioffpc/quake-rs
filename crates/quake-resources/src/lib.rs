@@ -1,5 +1,8 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
+use std::any::Any;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub mod bsp;
 pub mod dem;
@@ -27,6 +30,7 @@ impl FromBytes for String {
 pub struct Resources {
     base_path: std::path::PathBuf,
     pak: pak::Pak,
+    precache: HashMap<String, Rc<dyn Any>>,
 }
 
 impl Resources {
@@ -43,13 +47,36 @@ impl Resources {
         let base_path = path.as_ref().to_owned().canonicalize()?;
         let pak = pak::Pak::new(path.as_ref())?;
 
-        Ok(Self { base_path, pak })
+        Ok(Self {
+            base_path,
+            pak,
+            precache: HashMap::new(),
+        })
     }
 
     pub fn by_name<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
         // Try loading from filesystem first, then fall back to PAK archives
         self.load_from_filesystem(name)
             .or_else(|_| self.pak.by_name(name))
+    }
+
+    pub fn by_cached_name<T: FromBytes + 'static>(&mut self, name: &str) -> anyhow::Result<Rc<T>> {
+        if let Some(cached_data) = self.precache.get(name) {
+            let typed_data = cached_data
+                .clone()
+                .downcast::<T>()
+                .map_err(|_| anyhow::anyhow!("Cached data has wrong type for: {}", name))?;
+            return Ok(typed_data);
+        }
+
+        let data = Rc::new(self.by_name::<T>(name)?);
+
+        self.precache.insert(name.to_owned(), data.clone());
+        Ok(data)
+    }
+
+    pub fn cached_names(&self) -> impl Iterator<Item = String> {
+        self.precache.keys().cloned()
     }
 
     pub fn file_names(&self) -> impl Iterator<Item = String> {
@@ -74,6 +101,10 @@ impl Resources {
             .collect::<Vec<_>>();
 
         base_files.into_iter().chain(self.pak.file_names()).sorted()
+    }
+
+    pub fn flush(&mut self) {
+        self.precache.clear();
     }
 
     fn load_from_filesystem<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {

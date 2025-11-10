@@ -1,5 +1,6 @@
 use crate::command::Command;
 use crate::ControlFlow;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub fn alias() -> Command {
@@ -27,9 +28,9 @@ pub fn echo() -> Command {
     })
 }
 
-pub fn exec(resources: Rc<quake_resources::Resources>) -> Command {
+pub fn exec(resources: Rc<RefCell<quake_resources::Resources>>) -> Command {
     Box::new(move |ctx, args| {
-        if let Ok(text) = resources.by_name::<String>(args[0]) {
+        if let Ok(text) = resources.borrow().by_name::<String>(args[0]) {
             ctx.buffer.push_front(&text);
         }
         ControlFlow::Poll
@@ -40,9 +41,9 @@ pub fn quit() -> Command {
     Box::new(|_, _| std::process::exit(0))
 }
 
-pub fn rlist(resources: Rc<quake_resources::Resources>) -> Command {
+pub fn rlist(resources: Rc<RefCell<quake_resources::Resources>>) -> Command {
     Box::new(move |ctx, _| {
-        resources.file_names().for_each(|name| {
+        resources.borrow().file_names().for_each(|name| {
             writeln!(ctx.writer, "{}", name).unwrap();
         });
         ControlFlow::Poll
