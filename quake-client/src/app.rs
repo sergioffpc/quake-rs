@@ -28,7 +28,7 @@ pub fn run_app() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    let app = App::new(args.base_path);
+    let app = App::new(args.base_path)?;
     quake_window::run_event_loop(app, args.width, args.height)
 }
 
@@ -36,28 +36,32 @@ struct App {
     resources: Rc<quake_resources::Resources>,
     console: quake_console::Console,
 
+    audio_manager: quake_audio::AudioManager,
     input_manager: quake_input::InputManager,
 }
 
 impl App {
-    pub fn new<P>(path: P) -> Self
+    pub fn new<P>(path: P) -> anyhow::Result<Self>
     where
         P: AsRef<std::path::Path>,
     {
-        let resources = Rc::new(quake_resources::Resources::new(path).unwrap());
+        let resources = Rc::new(quake_resources::Resources::new(path)?);
         let mut console = quake_console::Console::new(resources.clone());
         console.register_command("connect", builtins::connect());
         console.register_command("reconnect", builtins::reconnect());
         console.register_command("disconnect", builtins::disconnect());
         console.register_command("playdemo", builtins::playdemo(resources.clone()));
 
+        let audio_manager = quake_audio::AudioManager::new(&mut console, resources.clone())?;
         let input_manager = quake_input::InputManager::new(&mut console);
 
-        Self {
+        Ok(Self {
             resources,
             console,
+
+            audio_manager,
             input_manager,
-        }
+        })
     }
 }
 
@@ -66,6 +70,11 @@ impl quake_window::WindowHandler for App {}
 impl quake_window::WindowLifecycleHandler for App {
     fn on_created(&mut self, window: &quake_window::window::WindowHandle) {
         self.console.append_text("exec quake.rc");
+
+        self.console.append_text("bind F1 \"cd play 2\"");
+        self.console.append_text("bind F2 \"cd play 3\"");
+        self.console.append_text("bind F3 \"cd stop\"");
+        self.console.append_text("bind F4 \"cd resume\"");
     }
 
     fn on_destroyed(&self, window: &quake_window::window::WindowHandle) {}

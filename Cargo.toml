@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["crates/quake-console", "crates/quake-input", "crates/quake-resources", "crates/quake-window", "quake-client", "quake-server"]
+members = [
+    "crates/quake-audio",
+    "crates/quake-console",
+    "crates/quake-input",
+    "crates/quake-resources",
+    "crates/quake-window",
+    "quake-client",
+    "quake-server"
+]
 
 [workspace.dependencies]
 anyhow = "1.0.100"

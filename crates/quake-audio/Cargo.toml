@@ -1,0 +1,12 @@
+[package]
+name = "quake-audio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quake-console = { path = "../quake-console" }
+quake-resources = { path = "../quake-resources" }
+
+anyhow.workspace = true
+
+kira = "0.11.0"
