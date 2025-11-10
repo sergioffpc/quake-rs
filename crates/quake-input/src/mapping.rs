@@ -1,32 +1,32 @@
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct KeyMapping {
-    key_mapping: HashMap<String, String>,
+pub struct Mappings {
+    mappings: HashMap<String, String>,
 }
 
-impl KeyMapping {
-    pub fn map_key(&mut self, key: &str, map: &str) {
-        self.key_mapping.insert(key.to_string(), map.to_string());
+impl Mappings {
+    pub fn map(&mut self, key: &str, map: &str) {
+        self.mappings.insert(key.to_string(), map.to_string());
     }
 
-    pub fn unmap_key(&mut self, key: &str) {
-        self.key_mapping.remove(key);
+    pub fn unmap(&mut self, key: &str) {
+        self.mappings.remove(key);
     }
 
     pub fn get(&self, key: &str) -> String {
-        self.key_mapping
+        self.mappings
             .get(key)
             .cloned()
             .unwrap_or_else(|| key.to_string())
     }
 
     pub fn clear(&mut self) {
-        self.key_mapping.clear();
+        self.mappings.clear();
     }
 }
 
-impl Default for KeyMapping {
+impl Default for Mappings {
     fn default() -> Self {
         let mut key_mapping = HashMap::new();
         key_mapping.insert("\t".to_string(), "TAB".to_string());
@@ -62,6 +62,8 @@ impl Default for KeyMapping {
         key_mapping.insert("ScrollUp".to_string(), "MWHEELUP".to_string());
         key_mapping.insert("ScrollDown".to_string(), "MWHEELDOWN".to_string());
 
-        Self { key_mapping }
+        Self {
+            mappings: key_mapping,
+        }
     }
 }

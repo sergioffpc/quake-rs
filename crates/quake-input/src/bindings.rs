@@ -1,25 +1,24 @@
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
-pub struct KeyBindings {
-    key_bindings: HashMap<String, String>,
+pub struct Bindings {
+    bindings: HashMap<String, String>,
 }
 
-impl KeyBindings {
-    pub fn bind_key(&mut self, key: &str, command: &str) {
-        self.key_bindings
-            .insert(key.to_string(), command.to_string());
+impl Bindings {
+    pub fn bind(&mut self, key: &str, command: &str) {
+        self.bindings.insert(key.to_string(), command.to_string());
     }
 
-    pub fn unbind_key(&mut self, key: &str) {
-        self.key_bindings.remove(key);
+    pub fn unbind(&mut self, key: &str) {
+        self.bindings.remove(key);
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
-        self.key_bindings.get(key).cloned()
+        self.bindings.get(key).cloned()
     }
 
     pub fn clear(&mut self) {
-        self.key_bindings.clear();
+        self.bindings.clear();
     }
 }
