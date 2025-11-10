@@ -36,8 +36,9 @@ struct App {
     resources: Rc<quake_resources::Resources>,
     console: quake_console::Console,
 
-    audio_manager: quake_audio::AudioManager,
-    input_manager: quake_input::InputManager,
+    audio_manager: Option<quake_audio::AudioManager>,
+    input_manager: Option<quake_input::InputManager>,
+    render_manager: Option<quake_render::RenderManager>,
 }
 
 impl App {
@@ -52,15 +53,13 @@ impl App {
         console.register_command("disconnect", builtins::disconnect());
         console.register_command("playdemo", builtins::playdemo(resources.clone()));
 
-        let audio_manager = quake_audio::AudioManager::new(&mut console, resources.clone())?;
-        let input_manager = quake_input::InputManager::new(&mut console);
-
         Ok(Self {
             resources,
             console,
 
-            audio_manager,
-            input_manager,
+            audio_manager: None,
+            input_manager: None,
+            render_manager: None,
         })
     }
 }
@@ -68,7 +67,16 @@ impl App {
 impl quake_window::WindowHandler for App {}
 
 impl quake_window::WindowLifecycleHandler for App {
-    fn on_created(&mut self, window: &quake_window::window::WindowHandle) {
+    fn on_created(&mut self, window: quake_window::window::WindowHandle) {
+        self.audio_manager = Some(
+            quake_audio::AudioManager::new(&mut self.console, self.resources.clone()).unwrap(),
+        );
+        self.input_manager = Some(quake_input::InputManager::new(&mut self.console));
+        self.render_manager = Some(
+            quake_render::RenderManager::new(window.clone(), window.width(), window.width())
+                .unwrap(),
+        );
+
         self.console.append_text("exec quake.rc");
 
         self.console.append_text("bind F1 \"cd play 2\"");
@@ -77,12 +85,12 @@ impl quake_window::WindowLifecycleHandler for App {
         self.console.append_text("bind F4 \"cd resume\"");
     }
 
-    fn on_destroyed(&self, window: &quake_window::window::WindowHandle) {}
+    fn on_destroyed(&self, window: quake_window::window::WindowHandle) {}
 }
 
 impl quake_window::WindowEventHandler for App {
     fn on_key_pressed(&mut self, key: &str) {
-        if let Some(command) = self.input_manager.on_key_pressed(key) {
+        if let Some(command) = self.input_manager.as_ref().unwrap().on_key_pressed(key) {
             self.console.append_text(&command);
         }
     }

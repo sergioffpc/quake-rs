@@ -45,7 +45,7 @@ impl ApplicationHandler for Window {
         });
 
         self.event_handler
-            .on_created(self.window_handle.as_ref().unwrap());
+            .on_created(self.window_handle.clone().unwrap());
     }
 
     fn window_event(
@@ -62,7 +62,7 @@ impl ApplicationHandler for Window {
         match event {
             WindowEvent::CloseRequested => {
                 self.event_handler
-                    .on_destroyed(self.window_handle.as_ref().unwrap());
+                    .on_destroyed(self.window_handle.clone().unwrap());
                 event_loop.exit();
             }
             WindowEvent::KeyboardInput {
@@ -102,8 +102,19 @@ impl ApplicationHandler for Window {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct WindowHandle {
     handle: Arc<winit::window::Window>,
+}
+
+impl WindowHandle {
+    pub fn width(&self) -> u32 {
+        self.handle.inner_size().width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.handle.inner_size().height
+    }
 }
 
 impl raw_window_handle::HasWindowHandle for WindowHandle {

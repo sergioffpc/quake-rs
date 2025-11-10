@@ -4,6 +4,7 @@ members = [
     "crates/quake-audio",
     "crates/quake-console",
     "crates/quake-input",
+    "crates/quake-render",
     "crates/quake-resources",
     "crates/quake-window",
     "quake-client",

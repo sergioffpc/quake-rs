@@ -6,9 +6,9 @@ pub mod window;
 pub trait WindowHandler: WindowLifecycleHandler + WindowEventHandler {}
 
 pub trait WindowLifecycleHandler {
-    fn on_created(&mut self, handle: &WindowHandle);
+    fn on_created(&mut self, handle: WindowHandle);
 
-    fn on_destroyed(&self, handle: &WindowHandle);
+    fn on_destroyed(&self, handle: WindowHandle);
 }
 
 pub trait WindowEventHandler {

@@ -7,6 +7,7 @@ edition = "2024"
 quake-audio = { path = "../crates/quake-audio" }
 quake-console = { path = "../crates/quake-console" }
 quake-input = { path = "../crates/quake-input" }
+quake-render = { path = "../crates/quake-render" }
 quake-resources = { path = "../crates/quake-resources" }
 quake-window = { path = "../crates/quake-window" }
 
