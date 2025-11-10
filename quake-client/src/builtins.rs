@@ -20,3 +20,16 @@ pub fn playdemo(resources: Rc<quake_resources::Resources>) -> quake_console::com
         quake_console::ControlFlow::Poll
     })
 }
+
+pub fn version() -> quake_console::command::Command {
+    Box::new(move |ctx, _| {
+        writeln!(
+            ctx.writer,
+            "Quake Client Version: {}",
+            env!("CARGO_PKG_VERSION")
+        )
+        .unwrap();
+
+        quake_console::ControlFlow::Poll
+    })
+}

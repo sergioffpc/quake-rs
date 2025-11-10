@@ -9,7 +9,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Quake client")]
+#[command(about = "Quake Client")]
 struct Args {
     #[arg(long, default_value = "resources/")]
     base_path: PathBuf,
@@ -52,6 +52,7 @@ impl App {
         console.register_command("reconnect", builtins::reconnect());
         console.register_command("disconnect", builtins::disconnect());
         console.register_command("playdemo", builtins::playdemo(resources.clone()));
+        console.register_command("version", builtins::version());
 
         Ok(Self {
             resources,
@@ -77,6 +78,7 @@ impl quake_window::WindowLifecycleHandler for App {
                 .unwrap(),
         );
 
+        self.console.append_text("version");
         self.console.append_text("exec quake.rc");
 
         self.console.append_text("bind F1 \"cd play 2\"");
