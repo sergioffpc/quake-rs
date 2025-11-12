@@ -1,20 +1,7 @@
-use kira::sound::static_sound::StaticSoundData;
+use crate::Snd;
 use quake_console::ControlFlow;
 use std::cell::RefCell;
-use std::io::Cursor;
 use std::rc::Rc;
-
-struct Sound {
-    data: StaticSoundData,
-}
-
-impl quake_resources::FromBytes for Sound {
-    fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
-        let data = StaticSoundData::from_cursor(Cursor::new(data.to_vec()))?;
-
-        Ok(Self { data })
-    }
-}
 
 pub fn play(
     manager: Rc<RefCell<kira::AudioManager>>,
@@ -23,10 +10,9 @@ pub fn play(
     Box::new(move |_, args| {
         let sound = resources
             .borrow_mut()
-            .by_cached_name::<Sound>(args[0])
+            .by_cached_name::<Snd>(args[0])
             .unwrap();
         manager.borrow_mut().play(sound.data.clone()).unwrap();
-
         ControlFlow::Poll
     })
 }
@@ -42,7 +28,7 @@ pub fn cd(
                 let track_name = format!("music/track{:02}.ogg", args[1].parse::<u32>().unwrap());
                 let sound = resources
                     .borrow_mut()
-                    .by_cached_name::<Sound>(&track_name)
+                    .by_cached_name::<Snd>(&track_name)
                     .unwrap();
 
                 if let Some(channel) = channel.borrow_mut().as_mut() {
@@ -55,7 +41,7 @@ pub fn cd(
                 let track_name = format!("music/track{:02}.ogg", args[1].parse::<u32>().unwrap());
                 let sound = resources
                     .borrow_mut()
-                    .by_cached_name::<Sound>(&track_name)
+                    .by_cached_name::<Snd>(&track_name)
                     .unwrap();
 
                 if let Some(channel) = channel.borrow_mut().as_mut() {
@@ -85,7 +71,6 @@ pub fn cd(
             }
             _ => (),
         }
-
         ControlFlow::Poll
     })
 }
@@ -93,10 +78,13 @@ pub fn cd(
 pub fn soundlist(
     resources: Rc<RefCell<quake_resources::Resources>>,
 ) -> quake_console::command::Command {
+    const SUPPORTED_EXTENSIONS: &[&str] = &[".mp3", ".ogg", ".flac", ".wav"];
+
     Box::new(move |ctx, _| {
         resources
             .borrow()
             .cached_names()
+            .filter(|name| SUPPORTED_EXTENSIONS.iter().any(|ext| name.ends_with(ext)))
             .for_each(|name| writeln!(ctx.writer, "{}", name).unwrap());
         ControlFlow::Poll
     })

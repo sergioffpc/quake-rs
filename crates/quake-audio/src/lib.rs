@@ -1,4 +1,6 @@
+use kira::sound::static_sound::StaticSoundData;
 use std::cell::RefCell;
+use std::io::Cursor;
 use std::rc::Rc;
 
 mod builtins;
@@ -26,5 +28,17 @@ impl AudioManager {
         console.register_command("soundlist", builtins::soundlist(resources.clone()));
 
         Ok(Self { manager, channel })
+    }
+}
+
+struct Snd {
+    data: StaticSoundData,
+}
+
+impl quake_resources::FromBytes for Snd {
+    fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
+        let data = StaticSoundData::from_cursor(Cursor::new(data.to_vec()))?;
+
+        Ok(Self { data })
     }
 }
