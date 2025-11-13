@@ -2,16 +2,16 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
 use std::any::Any;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub mod bsp;
-pub mod dem;
+pub mod builtins;
 pub mod mdl;
 
 mod pak;
 mod wad;
 
-pub trait FromBytes: Sized {
+pub trait FromBytes: Sized + Sync + Send {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self>;
 }
 
@@ -30,7 +30,7 @@ impl FromBytes for String {
 pub struct Resources {
     base_path: std::path::PathBuf,
     pak: pak::Pak,
-    precache: HashMap<String, Rc<dyn Any>>,
+    cache: HashMap<String, Arc<dyn Any + Send + Sync>>,
 }
 
 impl Resources {
@@ -50,7 +50,7 @@ impl Resources {
         Ok(Self {
             base_path,
             pak,
-            precache: HashMap::new(),
+            cache: HashMap::new(),
         })
     }
 
@@ -60,8 +60,8 @@ impl Resources {
             .or_else(|_| self.pak.by_name(name))
     }
 
-    pub fn by_cached_name<T: FromBytes + 'static>(&mut self, name: &str) -> anyhow::Result<Rc<T>> {
-        if let Some(cached_data) = self.precache.get(name) {
+    pub fn by_cached_name<T: FromBytes + 'static>(&mut self, name: &str) -> anyhow::Result<Arc<T>> {
+        if let Some(cached_data) = self.cache.get(name) {
             let typed_data = cached_data
                 .clone()
                 .downcast::<T>()
@@ -69,14 +69,14 @@ impl Resources {
             return Ok(typed_data);
         }
 
-        let data = Rc::new(self.by_name::<T>(name)?);
+        let data = Arc::new(self.by_name::<T>(name)?);
 
-        self.precache.insert(name.to_owned(), data.clone());
+        self.cache.insert(name.to_owned(), data.clone());
         Ok(data)
     }
 
     pub fn cached_names(&self) -> impl Iterator<Item = String> {
-        self.precache.keys().cloned()
+        self.cache.keys().cloned()
     }
 
     pub fn file_names(&self) -> impl Iterator<Item = String> {
@@ -104,7 +104,7 @@ impl Resources {
     }
 
     pub fn flush(&mut self) {
-        self.precache.clear();
+        self.cache.clear();
     }
 
     fn load_from_filesystem<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {

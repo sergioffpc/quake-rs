@@ -1,27 +1,26 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::app::App;
+use std::sync::{Arc, Mutex};
 
-pub fn map(resources: Rc<RefCell<quake_resources::Resources>>) -> quake_console::command::Command {
-    Box::new(move |_, args| {
-        if let Ok(bsp) = resources
-            .borrow()
-            .by_name::<quake_resources::bsp::Bsp>(args[0])
-        {
-            dbg!(bsp);
-        }
-        quake_console::ControlFlow::Poll
-    })
+#[derive(Clone)]
+pub struct AppBuiltins {
+    inner: Arc<Mutex<App>>,
 }
 
-pub fn version() -> quake_console::command::Command {
-    Box::new(move |ctx, _| {
+impl AppBuiltins {
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["version"];
+
+    pub fn new(app: Arc<Mutex<App>>) -> Self {
+        Self { inner: app }
+    }
+
+    pub fn builtin_version(&mut self) -> anyhow::Result<()> {
+        use std::io::Write;
         writeln!(
-            ctx.writer,
+            std::io::stdout(),
             "Quake Server Version: {}",
             env!("CARGO_PKG_VERSION")
-        )
-        .unwrap();
+        )?;
 
-        quake_console::ControlFlow::Poll
-    })
+        Ok(())
+    }
 }

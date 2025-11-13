@@ -1,47 +1,26 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::app::App;
+use std::sync::{Arc, Mutex};
 
-pub fn connect() -> quake_console::command::Command {
-    Box::new(move |_, args| quake_console::ControlFlow::Poll)
+#[derive(Clone)]
+pub struct AppBuiltins {
+    inner: Arc<Mutex<App>>,
 }
 
-pub fn reconnect() -> quake_console::command::Command {
-    Box::new(move |_, _| quake_console::ControlFlow::Poll)
-}
+impl AppBuiltins {
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["version"];
 
-pub fn disconnect() -> quake_console::command::Command {
-    Box::new(move |_, _| quake_console::ControlFlow::Poll)
-}
+    pub fn new(app: Arc<Mutex<App>>) -> Self {
+        Self { inner: app }
+    }
 
-pub fn flush(
-    resources: Rc<RefCell<quake_resources::Resources>>,
-) -> quake_console::command::Command {
-    Box::new(move |_, _| {
-        resources.borrow_mut().flush();
-        quake_console::ControlFlow::Poll
-    })
-}
-
-pub fn playdemo(
-    resources: Rc<RefCell<quake_resources::Resources>>,
-) -> quake_console::command::Command {
-    Box::new(move |_, args| {
-        let dem = resources
-            .borrow()
-            .by_name::<quake_resources::dem::Dem>(args[0])
-            .unwrap();
-        quake_console::ControlFlow::Poll
-    })
-}
-
-pub fn version() -> quake_console::command::Command {
-    Box::new(move |ctx, _| {
+    pub fn builtin_version(&mut self) -> anyhow::Result<()> {
+        use std::io::Write;
         writeln!(
-            ctx.writer,
+            std::io::stdout(),
             "Quake Client Version: {}",
             env!("CARGO_PKG_VERSION")
-        )
-        .unwrap();
-        quake_console::ControlFlow::Poll
-    })
+        )?;
+
+        Ok(())
+    }
 }

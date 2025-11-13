@@ -1,4 +1,4 @@
-use crate::FromBytes;
+use quake_resources::FromBytes;
 use std::io::BufRead;
 
 #[derive(Clone, Debug)]

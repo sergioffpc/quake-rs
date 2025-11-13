@@ -1,91 +1,67 @@
-use crate::Snd;
-use quake_console::ControlFlow;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::AudioManager;
+use std::sync::{Arc, Mutex};
 
-pub fn play(
-    manager: Rc<RefCell<kira::AudioManager>>,
-    resources: Rc<RefCell<quake_resources::Resources>>,
-) -> quake_console::command::Command {
-    Box::new(move |_, args| {
-        let sound = resources
-            .borrow_mut()
-            .by_cached_name::<Snd>(args[0])
-            .unwrap();
-        manager.borrow_mut().play(sound.data.clone()).unwrap();
-        ControlFlow::Poll
-    })
+#[derive(Clone)]
+pub struct AudioBuiltins {
+    inner: Arc<Mutex<AudioManager>>,
 }
 
-pub fn cd(
-    manager: Rc<RefCell<kira::AudioManager>>,
-    channel: Rc<RefCell<Option<kira::sound::static_sound::StaticSoundHandle>>>,
-    resources: Rc<RefCell<quake_resources::Resources>>,
-) -> quake_console::command::Command {
-    Box::new(move |_, args| {
-        match args[0] {
-            "play" => {
-                let track_name = format!("music/track{:02}.ogg", args[1].parse::<u32>().unwrap());
-                let sound = resources
-                    .borrow_mut()
-                    .by_cached_name::<Snd>(&track_name)
-                    .unwrap();
+impl AudioBuiltins {
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["play", "cd", "soundlist"];
 
-                if let Some(channel) = channel.borrow_mut().as_mut() {
-                    channel.stop(kira::Tween::default())
-                }
-                *channel.borrow_mut() =
-                    Some(manager.borrow_mut().play(sound.data.clone()).unwrap());
-            }
-            "loop" => {
-                let track_name = format!("music/track{:02}.ogg", args[1].parse::<u32>().unwrap());
-                let sound = resources
-                    .borrow_mut()
-                    .by_cached_name::<Snd>(&track_name)
-                    .unwrap();
+    pub fn new(manager: Arc<Mutex<AudioManager>>) -> Self {
+        Self { inner: manager }
+    }
 
-                if let Some(channel) = channel.borrow_mut().as_mut() {
-                    channel.stop(kira::Tween::default())
-                }
-                *channel.borrow_mut() = Some(
-                    manager
-                        .borrow_mut()
-                        .play(
-                            sound.data.with_settings(
-                                kira::sound::static_sound::StaticSoundSettings::default()
-                                    .loop_region(..),
-                            ),
-                        )
-                        .unwrap(),
-                );
-            }
-            "stop" => {
-                if let Some(channel) = channel.borrow_mut().as_mut() {
-                    channel.pause(kira::Tween::default())
-                }
-            }
-            "resume" => {
-                if let Some(channel) = channel.borrow_mut().as_mut() {
-                    channel.resume(kira::Tween::default())
-                }
-            }
+    pub fn builtin_play(&mut self, args: &[&str]) -> anyhow::Result<()> {
+        self.lock_manager()?.play_sound(args[0])
+    }
+
+    pub fn builtin_cd(&mut self, args: &[&str]) -> anyhow::Result<()> {
+        let mut manager = self.lock_manager()?;
+
+        let mut iter = args.iter();
+        match iter.next().unwrap() {
+            &"play" => manager.play_music(iter.next().unwrap(), false)?,
+            &"loop" => manager.play_music(iter.next().unwrap(), true)?,
+            &"stop" => manager.stop_music(),
+            &"resume" => manager.resume_music(),
             _ => (),
         }
-        ControlFlow::Poll
-    })
-}
 
-pub fn soundlist(
-    resources: Rc<RefCell<quake_resources::Resources>>,
-) -> quake_console::command::Command {
-    const SUPPORTED_EXTENSIONS: &[&str] = &[".mp3", ".ogg", ".flac", ".wav"];
+        Ok(())
+    }
 
-    Box::new(move |ctx, _| {
+    pub fn builtin_soundlist(&mut self) -> anyhow::Result<()> {
+        const SUPPORTED_EXTENSIONS: &[&str] = &[".mp3", ".ogg", ".flac", ".wav"];
+
+        use std::io::Write;
+        let manager = self.lock_manager()?;
+        let resources = manager
+            .resources
+            .read()
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         resources
-            .borrow()
             .cached_names()
             .filter(|name| SUPPORTED_EXTENSIONS.iter().any(|ext| name.ends_with(ext)))
-            .for_each(|name| writeln!(ctx.writer, "{}", name).unwrap());
-        ControlFlow::Poll
-    })
+            .for_each(|name| writeln!(std::io::stdout(), "{}", name).unwrap());
+
+        Ok(())
+    }
+
+    fn lock_manager(&self) -> anyhow::Result<std::sync::MutexGuard<AudioManager>> {
+        self.inner.lock().map_err(|e| anyhow::anyhow!("{}", e))
+    }
+}
+
+#[async_trait::async_trait]
+impl quake_traits::CommandHandler for AudioBuiltins {
+    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<()> {
+        match command[0] {
+            "play" => self.builtin_play(&command[1..]),
+            "cd" => self.builtin_cd(&command[1..]),
+            "soundlist" => self.builtin_soundlist(),
+            _ => Ok(()),
+        }
+    }
 }

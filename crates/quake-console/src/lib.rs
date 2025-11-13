@@ -1,18 +1,9 @@
-use crate::command::Command;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 
-mod builtins;
+pub mod builtins;
 pub mod command;
-
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
-pub enum ControlFlow {
-    #[default]
-    Poll,
-    Wait,
-}
 
 pub struct Console {
     command_buffer: command::CommandBuffer,
@@ -20,22 +11,16 @@ pub struct Console {
     command_variables: command::CommandVariables,
     command_registry: command::CommandRegistry,
     command_executor: command::CommandExecutor,
+
+    resources: Arc<RwLock<quake_resources::Resources>>,
 }
 
 impl Console {
-    pub fn new(resources: Rc<RefCell<quake_resources::Resources>>) -> Self {
+    pub fn new(resources: Arc<RwLock<quake_resources::Resources>>) -> Self {
         let command_buffer = command::CommandBuffer::default();
         let command_aliases = command::CommandAliases::default();
         let command_variables = command::CommandVariables::default();
-
-        let mut command_registry = command::CommandRegistry::default();
-        command_registry.register_command("alias", builtins::alias());
-        command_registry.register_command("echo", builtins::echo());
-        command_registry.register_command("exec", builtins::exec(resources.clone()));
-        command_registry.register_command("quit", builtins::quit());
-        command_registry.register_command("rlist", builtins::rlist(resources.clone()));
-        command_registry.register_command("wait", builtins::wait());
-
+        let command_registry = command::CommandRegistry::default();
         let command_executor = command::CommandExecutor::default();
 
         Self {
@@ -44,11 +29,17 @@ impl Console {
             command_variables,
             command_registry,
             command_executor,
+
+            resources,
         }
     }
 
-    pub fn register_command(&mut self, name: &str, command: Command) {
-        self.command_registry.register_command(name, command);
+    pub fn register_commands_handler<H>(&mut self, commands: &[&str], handler: H)
+    where
+        H: quake_traits::CommandHandler + Clone + 'static,
+    {
+        self.command_registry
+            .register_commands_handler(commands, handler);
     }
 
     pub fn unregister_command(&mut self, name: &str) {
@@ -63,16 +54,13 @@ impl Console {
         self.command_buffer.push_back(text);
     }
 
-    pub fn execute(&mut self) {
-        let mut command_context = command::CommandContext {
-            buffer: &mut self.command_buffer,
-            aliases: &mut self.command_aliases,
-            variables: &mut self.command_variables,
-            writer: Box::new(std::io::stdout()),
-        };
-
-        self.command_executor
-            .execute(&mut command_context, &self.command_registry);
+    pub fn execute(&mut self) -> anyhow::Result<()> {
+        self.command_executor.execute(
+            &mut self.command_buffer,
+            &self.command_aliases,
+            &mut self.command_variables,
+            &mut self.command_registry,
+        )
     }
 
     pub fn repl(&mut self) -> anyhow::Result<()> {

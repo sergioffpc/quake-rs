@@ -7,6 +7,7 @@ edition = "2024"
 quake-audio = { path = "../crates/quake-audio" }
 quake-console = { path = "../crates/quake-console" }
 quake-input = { path = "../crates/quake-input" }
+quake-network = { path = "../crates/quake-network" }
 quake-render = { path = "../crates/quake-render" }
 quake-resources = { path = "../crates/quake-resources" }
 quake-window = { path = "../crates/quake-window" }
@@ -14,3 +15,4 @@ quake-window = { path = "../crates/quake-window" }
 anyhow.workspace = true
 clap.workspace = true
 tracing-subscriber.workspace = true
+pollster = "0.4.0"

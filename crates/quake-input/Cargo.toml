@@ -5,5 +5,8 @@ edition = "2024"
 
 [dependencies]
 quake-console = { path = "../quake-console" }
+quake-traits = { path = "../quake-traits" }
 
 tracing.workspace = true
+async-trait = "0.1.89"
+anyhow = "1.0.100"

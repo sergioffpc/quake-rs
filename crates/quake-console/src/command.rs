@@ -1,4 +1,3 @@
-use crate::ControlFlow;
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Default)]
@@ -60,35 +59,39 @@ impl CommandBuffer {
     }
 }
 
-pub struct CommandContext<'a> {
-    pub buffer: &'a mut CommandBuffer,
-    pub aliases: &'a mut CommandAliases,
-    pub variables: &'a mut CommandVariables,
-    pub writer: Box<dyn std::io::Write>,
-}
-
-pub type Command = Box<dyn Fn(&mut CommandContext, &[&str]) -> ControlFlow>;
-
-#[derive(Default)]
 pub struct CommandRegistry {
-    registry: HashMap<String, Command>,
+    registry: multimap::MultiMap<String, Box<dyn quake_traits::CommandHandler>>,
 }
 
 impl CommandRegistry {
-    pub fn register_command(&mut self, name: &str, command: Command) {
-        self.registry.insert(name.to_string(), command);
+    pub fn register_commands_handler<H>(&mut self, commands: &[&str], handler: H)
+    where
+        H: quake_traits::CommandHandler + Clone + 'static,
+    {
+        for command in commands {
+            self.registry
+                .insert(command.to_string(), Box::new(handler.clone()));
+        }
     }
 
     pub fn unregister_command(&mut self, name: &str) {
         self.registry.remove(name);
     }
 
-    pub fn get(&self, name: &str) -> Option<&Command> {
-        self.registry.get(name)
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Box<dyn quake_traits::CommandHandler>> {
+        self.registry.get_mut(name)
     }
 
     pub fn commands(&self) -> impl Iterator<Item = &String> {
         self.registry.keys()
+    }
+}
+
+impl Default for CommandRegistry {
+    fn default() -> Self {
+        Self {
+            registry: multimap::MultiMap::new(),
+        }
     }
 }
 
@@ -112,30 +115,53 @@ impl CommandVariables {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub enum ControlFlow {
+    #[default]
+    Poll,
+    Wait,
+}
+
 #[derive(Default)]
 pub struct CommandExecutor {
     control_flow: ControlFlow,
 }
 
 impl CommandExecutor {
-    pub fn execute(&mut self, context: &mut CommandContext, registry: &CommandRegistry) {
+    pub fn execute(
+        &mut self,
+        buffer: &mut CommandBuffer,
+        aliases: &CommandAliases,
+        variables: &mut CommandVariables,
+        registry: &mut CommandRegistry,
+    ) -> anyhow::Result<()> {
         self.control_flow = ControlFlow::Poll;
-        while let Some(command_line) = context.buffer.pop_front() {
+        while let Some(command_line) = buffer.pop_front() {
             let (name, args) = self.parse_command_line(&command_line);
 
-            if self.try_execute_alias(context, &name) {
+            if self.try_execute_alias(aliases, buffer, &name) {
                 continue;
             }
 
-            if self.try_execute_command(context, registry, &name, &args) {
+            if self.try_execute_command(registry, &name, &args)? {
                 if self.control_flow == ControlFlow::Wait {
                     break;
                 }
                 continue;
             }
 
-            self.assign_variable(context, &name, &args);
+            self.assign_variable(variables, &name, &args);
         }
+
+        Ok(())
+    }
+
+    pub fn get_control_flow(&self) -> ControlFlow {
+        self.control_flow
+    }
+
+    pub fn set_control_flow(&mut self, control_flow: ControlFlow) {
+        self.control_flow = control_flow;
     }
 
     fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
@@ -145,9 +171,14 @@ impl CommandExecutor {
         (name, args)
     }
 
-    fn try_execute_alias(&self, context: &mut CommandContext, name: &str) -> bool {
-        if let Some(command_line) = context.aliases.get(name) {
-            context.buffer.push_front(command_line);
+    fn try_execute_alias(
+        &self,
+        aliases: &CommandAliases,
+        buffer: &mut CommandBuffer,
+        name: &str,
+    ) -> bool {
+        if let Some(command_line) = aliases.get(name) {
+            buffer.push_front(command_line);
             true
         } else {
             false
@@ -156,21 +187,26 @@ impl CommandExecutor {
 
     fn try_execute_command(
         &self,
-        context: &mut CommandContext,
-        registry: &CommandRegistry,
+        registry: &mut CommandRegistry,
         name: &str,
         args: &[&str],
-    ) -> bool {
-        if let Some(command_fn) = registry.get(name) {
-            command_fn(context, args);
-            true
+    ) -> anyhow::Result<bool> {
+        if let Some(command_handler) = registry.get_mut(name) {
+            pollster::block_on(
+                command_handler.handle_command(
+                    &std::iter::once(name)
+                        .chain(args.iter().copied())
+                        .collect::<Vec<_>>(),
+                ),
+            )?;
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
-    fn assign_variable(&self, context: &mut CommandContext, name: &str, args: &[&str]) {
+    fn assign_variable(&self, variables: &mut CommandVariables, name: &str, args: &[&str]) {
         let value = args.join(" ");
-        context.variables.set(name, &value);
+        variables.set(name, &value);
     }
 }

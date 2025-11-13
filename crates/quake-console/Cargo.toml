@@ -5,8 +5,12 @@ edition = "2024"
 
 [dependencies]
 quake-resources = { path = "../quake-resources" }
+quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
 tracing.workspace = true
 
+async-trait = "0.1.89"
 rustyline = { version = "17.0.2", features = ["derive"] }
+multimap = "0.10.1"
+pollster = "0.4.0"

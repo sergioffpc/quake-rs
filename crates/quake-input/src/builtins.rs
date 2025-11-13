@@ -1,10 +1,22 @@
-use crate::bindings::Bindings;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::InputManager;
+use std::sync::{Arc, Mutex};
 
-pub fn bind(bindings: Rc<RefCell<Bindings>>) -> quake_console::command::Command {
-    Box::new(move |_, args| {
-        let key = args[0];
+#[derive(Clone)]
+pub struct InputBuiltins {
+    inner: Arc<Mutex<InputManager>>,
+}
+
+impl InputBuiltins {
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["bind", "unbind", "unbindall"];
+
+    pub fn new(manager: Arc<Mutex<InputManager>>) -> Self {
+        Self { inner: manager }
+    }
+
+    pub fn builtin_bind(&mut self, args: &[&str]) -> anyhow::Result<()> {
+        let mut manager = self.lock_manager()?;
+
+        let bind = args[0];
         if args.len() > 1 {
             let s = args[1..].join(" ");
             let command_text = s
@@ -12,27 +24,36 @@ pub fn bind(bindings: Rc<RefCell<Bindings>>) -> quake_console::command::Command 
                 .and_then(|s| s.strip_suffix('"'))
                 .unwrap_or(&s)
                 .replace(";", "\n");
-            bindings.borrow_mut().bind(key, &command_text);
+            manager.bindings.bind(bind, &command_text);
         } else {
-            bindings.borrow_mut().unbind(key);
+            manager.bindings.unbind(bind);
         }
+        Ok(())
+    }
 
-        quake_console::ControlFlow::Poll
-    })
+    pub fn builtin_unbind(&mut self, args: &[&str]) -> anyhow::Result<()> {
+        self.lock_manager()?.bindings.unbind(args[0]);
+        Ok(())
+    }
+
+    pub fn builtin_unbindall(&mut self) -> anyhow::Result<()> {
+        self.lock_manager()?.bindings.clear();
+        Ok(())
+    }
+
+    fn lock_manager(&self) -> anyhow::Result<std::sync::MutexGuard<InputManager>> {
+        self.inner.lock().map_err(|e| anyhow::anyhow!("{}", e))
+    }
 }
 
-pub fn unbind(bindings: Rc<RefCell<Bindings>>) -> quake_console::command::Command {
-    Box::new(move |_, args| {
-        bindings.borrow_mut().unbind(args[0]);
-
-        quake_console::ControlFlow::Poll
-    })
-}
-
-pub fn unbindall(bindings: Rc<RefCell<Bindings>>) -> quake_console::command::Command {
-    Box::new(move |_, _| {
-        bindings.borrow_mut().clear();
-
-        quake_console::ControlFlow::Poll
-    })
+#[async_trait::async_trait]
+impl quake_traits::CommandHandler for InputBuiltins {
+    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<()> {
+        match command[0] {
+            "bind" => self.builtin_bind(&command[1..]),
+            "unbind" => self.builtin_unbind(&command[1..]),
+            "unbindall" => self.builtin_unbindall(),
+            _ => Ok(()),
+        }
+    }
 }

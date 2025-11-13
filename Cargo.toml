@@ -4,8 +4,9 @@ members = [
     "crates/quake-audio",
     "crates/quake-console",
     "crates/quake-input",
+    "crates/quake-network",
     "crates/quake-render",
-    "crates/quake-resources",
+    "crates/quake-resources", "crates/quake-traits",
     "crates/quake-window",
     "quake-client",
     "quake-server"
@@ -14,5 +15,6 @@ members = [
 [workspace.dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.51", features = ["derive"] }
+glam = "0.30.9"
 tracing = { version = "0.1.41", features = ["log"] }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
