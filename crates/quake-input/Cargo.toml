@@ -1,8 +1,8 @@
 [package]
 name = "quake-input"
-edition = "2024"
 
 version.workspace = true
+edition.workspace = true
 
 [dependencies]
 quake-traits = { path = "../quake-traits" }

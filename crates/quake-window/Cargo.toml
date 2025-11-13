@@ -1,8 +1,8 @@
 [package]
 name = "quake-window"
-edition = "2024"
 
 version.workspace = true
+edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true

@@ -89,6 +89,7 @@ impl quake_traits::CommandHandler for ConsoleBuiltins {
             "exec" => self.builtin_exec(&command[1..]),
             "quit" => self.builtin_quit(),
             "wait" => self.builtin_wait(),
+            "version" => self.builtin_version(),
             _ => Ok(()),
         }
     }
