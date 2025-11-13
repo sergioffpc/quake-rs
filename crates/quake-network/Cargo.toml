@@ -1,16 +1,16 @@
 [package]
 name = "quake-network"
-version = "0.1.0"
 edition = "2024"
 
+version.workspace = true
+
 [dependencies]
-quake-console = { path = "../quake-console" }
 quake-resources = { path = "../quake-resources" }
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
+async-trait.workspace = true
 glam.workspace = true
 tracing.workspace = true
 
 tokio = { version = "1.48.0", features = ["net", "sync"] }
-async-trait = "0.1.89"

@@ -1,14 +1,14 @@
 [package]
 name = "quake-audio"
-version = "0.1.0"
 edition = "2024"
 
+version.workspace = true
+
 [dependencies]
-quake-console = { path = "../quake-console" }
 quake-resources = { path = "../quake-resources" }
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
+async-trait.workspace = true
 
 kira = "0.11.0"
-async-trait = "0.1.89"

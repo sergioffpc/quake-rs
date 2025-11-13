@@ -1,12 +1,12 @@
 [package]
 name = "quake-input"
-version = "0.1.0"
 edition = "2024"
 
+version.workspace = true
+
 [dependencies]
-quake-console = { path = "../quake-console" }
 quake-traits = { path = "../quake-traits" }
 
+anyhow.workspace = true
 tracing.workspace = true
-async-trait = "0.1.89"
-anyhow = "1.0.100"
+async-trait.workspace = true

@@ -9,7 +9,7 @@ pub struct ConsoleBuiltins {
 
 impl ConsoleBuiltins {
     pub const BUILTIN_COMMANDS: &'static [&'static str] =
-        &["alias", "echo", "exec", "quit", "wait"];
+        &["alias", "echo", "exec", "quit", "wait", "version"];
 
     pub fn new(console: Arc<Mutex<Console>>) -> Self {
         Self { inner: console }
@@ -53,6 +53,17 @@ impl ConsoleBuiltins {
     pub fn builtin_wait(&mut self) -> anyhow::Result<()> {
         let mut console = self.lock_console()?;
         console.command_executor.set_control_flow(ControlFlow::Wait);
+        Ok(())
+    }
+
+    pub fn builtin_version(&mut self) -> anyhow::Result<()> {
+        use std::io::Write;
+        writeln!(
+            std::io::stdout(),
+            "Quake Version: {}",
+            env!("CARGO_PKG_VERSION")
+        )?;
+
         Ok(())
     }
 

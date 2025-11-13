@@ -1,16 +1,16 @@
 [package]
 name = "quake-console"
-version = "0.1.0"
 edition = "2024"
+
+version.workspace = true
 
 [dependencies]
 quake-resources = { path = "../quake-resources" }
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
-tracing.workspace = true
+async-trait.workspace = true
+pollster.workspace = true
 
-async-trait = "0.1.89"
 rustyline = { version = "17.0.2", features = ["derive"] }
 multimap = "0.10.1"
-pollster = "0.4.0"

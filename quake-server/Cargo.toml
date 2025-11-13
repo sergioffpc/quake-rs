@@ -1,11 +1,11 @@
 [package]
 name = "quake-server"
-version = "0.1.0"
 edition = "2024"
+
+version.workspace = true
 
 [dependencies]
 quake-console = { path = "../crates/quake-console" }
-quake-network = { path = "../crates/quake-network" }
 quake-resources = { path = "../crates/quake-resources" }
 
 anyhow.workspace = true

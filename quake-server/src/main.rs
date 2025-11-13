@@ -7,7 +7,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, EnvFilter};
 
 mod app;
-mod builtins;
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]
