@@ -128,7 +128,7 @@ pub struct CommandExecutor {
 }
 
 impl CommandExecutor {
-    pub fn execute(
+    pub async fn execute(
         &mut self,
         buffer: &mut CommandBuffer,
         aliases: &CommandAliases,
@@ -143,7 +143,7 @@ impl CommandExecutor {
                 continue;
             }
 
-            if self.try_execute_command(registry, &name, &args)? {
+            if self.try_execute_command(registry, &name, &args).await? {
                 if self.control_flow == ControlFlow::Wait {
                     break;
                 }
@@ -185,20 +185,20 @@ impl CommandExecutor {
         }
     }
 
-    fn try_execute_command(
+    async fn try_execute_command(
         &self,
         registry: &mut CommandRegistry,
         name: &str,
         args: &[&str],
     ) -> anyhow::Result<bool> {
         if let Some(command_handler) = registry.get_mut(name) {
-            pollster::block_on(
-                command_handler.handle_command(
+            command_handler
+                .handle_command(
                     &std::iter::once(name)
                         .chain(args.iter().copied())
                         .collect::<Vec<_>>(),
-                ),
-            )?;
+                )
+                .await?;
             Ok(true)
         } else {
             Ok(false)

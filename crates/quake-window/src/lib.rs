@@ -6,21 +6,21 @@ pub mod window;
 pub trait WindowHandler: WindowLifecycleHandler + WindowEventHandler {}
 
 pub trait WindowLifecycleHandler {
-    fn on_created(&mut self, handle: WindowHandle);
+    fn on_created(&mut self, handle: WindowHandle) -> anyhow::Result<()>;
 
-    fn on_destroyed(&self, handle: WindowHandle);
+    fn on_destroyed(&self, handle: WindowHandle) -> anyhow::Result<()>;
 }
 
 pub trait WindowEventHandler {
-    fn on_key_pressed(&mut self, key: &str);
+    fn on_key_pressed(&mut self, key: &str) -> anyhow::Result<()>;
 
-    fn on_key_released(&mut self, key: &str);
+    fn on_key_released(&mut self, key: &str) -> anyhow::Result<()>;
 
-    fn on_update_frame(&mut self, delta_time: f64);
+    fn on_update_frame(&mut self, delta_time: f64) -> anyhow::Result<()>;
 
-    fn on_render_frame(&self);
+    fn on_render_frame(&self) -> anyhow::Result<()>;
 
-    fn on_present_frame(&self);
+    fn on_present_frame(&self) -> anyhow::Result<()>;
 }
 
 pub fn run_event_loop<H>(event_handler: H, width: u32, height: u32) -> anyhow::Result<()>

@@ -54,16 +54,18 @@ impl Console {
         self.command_buffer.push_back(text);
     }
 
-    pub fn execute(&mut self) -> anyhow::Result<()> {
-        self.command_executor.execute(
-            &mut self.command_buffer,
-            &self.command_aliases,
-            &mut self.command_variables,
-            &mut self.command_registry,
-        )
+    pub async fn execute(&mut self) -> anyhow::Result<()> {
+        self.command_executor
+            .execute(
+                &mut self.command_buffer,
+                &self.command_aliases,
+                &mut self.command_variables,
+                &mut self.command_registry,
+            )
+            .await
     }
 
-    pub fn repl(&mut self) -> anyhow::Result<()> {
+    pub async fn repl(&mut self) -> anyhow::Result<()> {
         let config = rustyline::Config::builder()
             .auto_add_history(true)
             .history_ignore_space(true)
@@ -83,7 +85,7 @@ impl Console {
             match readline {
                 Ok(line) => {
                     self.append_text(line.as_str());
-                    self.execute();
+                    self.execute().await?;
                 }
                 Err(rustyline::error::ReadlineError::Interrupted)
                 | Err(rustyline::error::ReadlineError::Eof) => {

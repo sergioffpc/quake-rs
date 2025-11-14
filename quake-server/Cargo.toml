@@ -6,11 +6,13 @@ edition.workspace = true
 
 [dependencies]
 quake-console = { path = "../crates/quake-console" }
+quake-network = { path = "../crates/quake-network" }
 quake-resources = { path = "../crates/quake-resources" }
 
 anyhow.workspace = true
 clap.workspace = true
+tracing.workspace = true
 tracing-subscriber.workspace = true
 
 daemonize = "0.5.0"
-tokio = { version = "1.48.0", features = ["rt-multi-thread", "time"] }
+tokio = { version = "1.48.0", features = ["rt-multi-thread"] }

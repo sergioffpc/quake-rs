@@ -45,7 +45,8 @@ impl ApplicationHandler for Window {
         });
 
         self.event_handler
-            .on_created(self.window_handle.clone().unwrap());
+            .on_created(self.window_handle.clone().unwrap())
+            .unwrap();
     }
 
     fn window_event(
@@ -62,7 +63,8 @@ impl ApplicationHandler for Window {
         match event {
             WindowEvent::CloseRequested => {
                 self.event_handler
-                    .on_destroyed(self.window_handle.clone().unwrap());
+                    .on_destroyed(self.window_handle.clone().unwrap())
+                    .unwrap();
                 event_loop.exit();
             }
             WindowEvent::KeyboardInput {
@@ -80,15 +82,15 @@ impl ApplicationHandler for Window {
                     None => &format!("{:?}", key_code),
                 };
                 match state {
-                    ElementState::Pressed => self.event_handler.on_key_pressed(key),
-                    ElementState::Released => self.event_handler.on_key_released(key),
+                    ElementState::Pressed => self.event_handler.on_key_pressed(key).unwrap(),
+                    ElementState::Released => self.event_handler.on_key_released(key).unwrap(),
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.event_handler.on_render_frame();
+                self.event_handler.on_render_frame().unwrap();
 
                 window.handle.pre_present_notify();
-                self.event_handler.on_present_frame();
+                self.event_handler.on_present_frame().unwrap();
             }
             _ => (),
         }
@@ -96,7 +98,8 @@ impl ApplicationHandler for Window {
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         self.event_handler
-            .on_update_frame(self.last_frame_time.elapsed().as_secs_f64());
+            .on_update_frame(self.last_frame_time.elapsed().as_secs_f64())
+            .unwrap();
         self.last_frame_time = Instant::now();
         self.window_handle.as_ref().unwrap().handle.request_redraw();
     }

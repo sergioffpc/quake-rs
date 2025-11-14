@@ -1,5 +1,5 @@
 use tokio::net::ToSocketAddrs;
-use tracing::log::error;
+use tracing::log::{error, info, warn};
 
 pub struct ServerManager {
     socket: tokio::net::UdpSocket,
@@ -15,7 +15,12 @@ impl ServerManager {
         Ok(Self { socket })
     }
 
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn listen(&self) -> anyhow::Result<()> {
+        info!(
+            "Listening on {:?} for UDP packets...",
+            self.socket.local_addr()?
+        );
+
         let mut buf = [0u8; 1024];
         loop {
             match self.socket.recv_from(&mut buf).await {
@@ -33,8 +38,8 @@ impl ServerManager {
 
     async fn handle_message(&self, data: &[u8], addr: std::net::SocketAddr) -> anyhow::Result<()> {
         match data[0] {
-            0x01 => println!("Received connection request from {}", addr),
-            _ => println!("Received unknown packet from {}", addr),
+            0x01 => info!("Received connection request from {}", addr),
+            _ => warn!("Received unknown packet from {}", addr),
         }
 
         Ok(())
