@@ -45,13 +45,14 @@ impl ConsoleBuiltins {
     }
 
     fn builtin_exec(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        let text = self.resources.by_name::<String>(args[0])?;
-        let mut command_buffer = self
-            .inner
-            .command_buffer
-            .write()
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        command_buffer.push_front(&text);
+        if let Ok(text) = self.resources.by_name::<String>(args[0]) {
+            let mut command_buffer = self
+                .inner
+                .command_buffer
+                .write()
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            command_buffer.push_front(&text);
+        }
         Ok(ControlFlow::Poll)
     }
 

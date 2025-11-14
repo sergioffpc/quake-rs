@@ -1,35 +1,20 @@
+use quake_traits::ControlFlow;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::RwLock;
 
 pub mod builtins;
 pub mod command;
 
+#[derive(Default)]
 pub struct Console {
     command_buffer: RwLock<command::CommandBuffer>,
     command_aliases: RwLock<command::CommandAliases>,
     command_variables: RwLock<command::CommandVariables>,
     command_registry: RwLock<command::CommandRegistry>,
-    command_executor: Mutex<command::CommandExecutor>,
 }
 
 impl Console {
-    pub fn new(resources: Arc<quake_resources::Resources>) -> Self {
-        let command_buffer = RwLock::new(command::CommandBuffer::default());
-        let command_aliases = RwLock::new(command::CommandAliases::default());
-        let command_variables = RwLock::new(command::CommandVariables::default());
-        let command_registry = RwLock::new(command::CommandRegistry::default());
-        let command_executor = Mutex::new(command::CommandExecutor::default());
-
-        Self {
-            command_buffer,
-            command_aliases,
-            command_variables,
-            command_registry,
-            command_executor,
-        }
-    }
-
     pub fn register_commands_handler<H>(&self, commands: &[&str], handler: H) -> anyhow::Result<()>
     where
         H: quake_traits::CommandHandler + Clone + 'static,
@@ -60,18 +45,51 @@ impl Console {
     }
 
     pub async fn execute(&self) -> anyhow::Result<()> {
-        let mut command_executor = self
-            .command_executor
-            .lock()
+        while let Some(command_line) = self.fetch_next_command()?.as_deref() {
+            let (name, args) = self.parse_command_line(&command_line);
+
+            if let Some(command_line) = self.command_aliases.read().unwrap().get(name) {
+                self.command_buffer
+                    .write()
+                    .unwrap()
+                    .push_front(command_line);
+                continue;
+            }
+
+            if let Some(command_handler) = self.command_registry.write().unwrap().get_mut(name) {
+                match command_handler
+                    .handle_command(
+                        &std::iter::once(name)
+                            .chain(args.iter().copied())
+                            .collect::<Vec<_>>(),
+                    )
+                    .await?
+                {
+                    ControlFlow::Wait => break,
+                    ControlFlow::Poll => continue,
+                }
+            }
+
+            let value = args.join(" ");
+            self.command_variables.write().unwrap().set(name, &value);
+        }
+
+        Ok(())
+    }
+
+    fn fetch_next_command(&self) -> anyhow::Result<Option<String>> {
+        let mut command_buffer = self
+            .command_buffer
+            .write()
             .map_err(|e| anyhow::anyhow!("{}", e))?;
-        command_executor
-            .execute(
-                &mut self.command_buffer.write().unwrap(),
-                &self.command_aliases.read().unwrap(),
-                &mut self.command_variables.write().unwrap(),
-                &mut self.command_registry.write().unwrap(),
-            )
-            .await
+        Ok(command_buffer.pop_front())
+    }
+
+    fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
+        let mut args = command_line.split_whitespace();
+        let name = args.next().unwrap_or("");
+        let args = args.collect::<Vec<_>>();
+        (name, args)
     }
 
     pub async fn repl(&mut self) -> anyhow::Result<()> {

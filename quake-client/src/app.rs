@@ -27,7 +27,7 @@ impl App {
             .enable_all()
             .build()?;
         let resources = Arc::new(quake_resources::Resources::new(path)?);
-        let console = Arc::new(quake_console::Console::new(resources.clone()));
+        let console = Arc::new(quake_console::Console::default());
 
         Ok(Self {
             runtime,

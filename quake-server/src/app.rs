@@ -46,7 +46,7 @@ impl App {
         A: tokio::net::ToSocketAddrs,
     {
         let resources = Arc::new(quake_resources::Resources::new(path)?);
-        let console = Arc::new(quake_console::Console::new(resources.clone()));
+        let console = Arc::new(quake_console::Console::default());
         let server_manager = Arc::new(quake_network::server::ServerManager::new(address).await?);
 
         let resources_builtins =

@@ -1,4 +1,3 @@
-use quake_traits::ControlFlow;
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Default)]
@@ -113,53 +112,5 @@ impl CommandVariables {
 
     pub fn set(&mut self, name: &str, value: &str) {
         self.variables.insert(name.to_string(), value.to_string());
-    }
-}
-
-#[derive(Default)]
-pub struct CommandExecutor;
-
-impl CommandExecutor {
-    pub async fn execute(
-        &mut self,
-        buffer: &mut CommandBuffer,
-        aliases: &CommandAliases,
-        variables: &mut CommandVariables,
-        registry: &mut CommandRegistry,
-    ) -> anyhow::Result<()> {
-        while let Some(command_line) = buffer.pop_front() {
-            let (name, args) = self.parse_command_line(&command_line);
-
-            if let Some(command_line) = aliases.get(name) {
-                buffer.push_front(command_line);
-                continue;
-            }
-
-            if let Some(command_handler) = registry.get_mut(name) {
-                match command_handler
-                    .handle_command(
-                        &std::iter::once(name)
-                            .chain(args.iter().copied())
-                            .collect::<Vec<_>>(),
-                    )
-                    .await?
-                {
-                    ControlFlow::Wait => break,
-                    ControlFlow::Poll => continue,
-                }
-            }
-
-            let value = args.join(" ");
-            variables.set(name, &value);
-        }
-
-        Ok(())
-    }
-
-    fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
-        let mut args = command_line.split_whitespace();
-        let name = args.next().unwrap_or("");
-        let args = args.collect::<Vec<_>>();
-        (name, args)
     }
 }
