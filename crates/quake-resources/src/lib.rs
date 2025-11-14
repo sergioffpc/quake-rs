@@ -69,6 +69,7 @@ impl Resources {
                 .map_err(|_| anyhow::anyhow!("Cached data has wrong type for: {}", name))?;
             return Ok(typed_data);
         }
+        drop(cache); // Release read lock before acquiring write lock
 
         let data = Arc::new(self.by_name::<T>(name)?);
 
