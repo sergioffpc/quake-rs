@@ -1,27 +1,25 @@
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 pub mod builtins;
 pub mod command;
 
 pub struct Console {
-    command_buffer: command::CommandBuffer,
-    command_aliases: command::CommandAliases,
-    command_variables: command::CommandVariables,
-    command_registry: command::CommandRegistry,
-    command_executor: command::CommandExecutor,
-
-    resources: Arc<RwLock<quake_resources::Resources>>,
+    command_buffer: RwLock<command::CommandBuffer>,
+    command_aliases: RwLock<command::CommandAliases>,
+    command_variables: RwLock<command::CommandVariables>,
+    command_registry: RwLock<command::CommandRegistry>,
+    command_executor: Mutex<command::CommandExecutor>,
 }
 
 impl Console {
-    pub fn new(resources: Arc<RwLock<quake_resources::Resources>>) -> Self {
-        let command_buffer = command::CommandBuffer::default();
-        let command_aliases = command::CommandAliases::default();
-        let command_variables = command::CommandVariables::default();
-        let command_registry = command::CommandRegistry::default();
-        let command_executor = command::CommandExecutor::default();
+    pub fn new(resources: Arc<quake_resources::Resources>) -> Self {
+        let command_buffer = RwLock::new(command::CommandBuffer::default());
+        let command_aliases = RwLock::new(command::CommandAliases::default());
+        let command_variables = RwLock::new(command::CommandVariables::default());
+        let command_registry = RwLock::new(command::CommandRegistry::default());
+        let command_executor = Mutex::new(command::CommandExecutor::default());
 
         Self {
             command_buffer,
@@ -29,38 +27,49 @@ impl Console {
             command_variables,
             command_registry,
             command_executor,
-
-            resources,
         }
     }
 
-    pub fn register_commands_handler<H>(&mut self, commands: &[&str], handler: H)
+    pub fn register_commands_handler<H>(&self, commands: &[&str], handler: H) -> anyhow::Result<()>
     where
         H: quake_traits::CommandHandler + Clone + 'static,
     {
-        self.command_registry
-            .register_commands_handler(commands, handler);
+        let mut command_registry = self
+            .command_registry
+            .write()
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        command_registry.register_commands_handler(commands, handler);
+        Ok(())
     }
 
-    pub fn unregister_command(&mut self, name: &str) {
-        self.command_registry.unregister_command(name);
+    pub fn unregister_command(&self, name: &str) -> anyhow::Result<()> {
+        let mut command_registry = self
+            .command_registry
+            .write()
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        command_registry.unregister_command(name);
+        Ok(())
     }
 
     pub fn prepend_text(&mut self, text: &str) {
-        self.command_buffer.push_front(text);
+        self.command_buffer.write().unwrap().push_front(text);
     }
 
-    pub fn append_text(&mut self, text: &str) {
-        self.command_buffer.push_back(text);
+    pub fn append_text(&self, text: &str) {
+        self.command_buffer.write().unwrap().push_back(text);
     }
 
-    pub async fn execute(&mut self) -> anyhow::Result<()> {
-        self.command_executor
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        let mut command_executor = self
+            .command_executor
+            .lock()
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        command_executor
             .execute(
-                &mut self.command_buffer,
-                &self.command_aliases,
-                &mut self.command_variables,
-                &mut self.command_registry,
+                &mut self.command_buffer.write().unwrap(),
+                &self.command_aliases.read().unwrap(),
+                &mut self.command_variables.write().unwrap(),
+                &mut self.command_registry.write().unwrap(),
             )
             .await
     }
@@ -74,8 +83,9 @@ impl Console {
             .build();
 
         let mut rl = rustyline::Editor::with_config(config)?;
-        let commands = self.command_registry.commands().map(String::from).collect();
-        rl.set_helper(Some(ConsoleHelper { commands }));
+        rl.set_helper(Some(ConsoleHelper {
+            commands: self.list_of_registry_commands(),
+        }));
 
         let history_file = ".quake_history";
         let _ = rl.load_history(history_file);
@@ -99,6 +109,15 @@ impl Console {
 
         rl.save_history(history_file)
             .map_err(|err| anyhow::anyhow!(err))
+    }
+
+    fn list_of_registry_commands(&self) -> Vec<String> {
+        self.command_registry
+            .read()
+            .unwrap()
+            .commands()
+            .map(String::from)
+            .collect()
     }
 }
 

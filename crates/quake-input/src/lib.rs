@@ -14,19 +14,19 @@ pub struct InputManager {
 }
 
 impl InputManager {
-    pub fn on_key_pressed(&self, key: &str) -> Option<String> {
+    pub fn on_key_pressed(&self, key: &str) -> anyhow::Result<Option<String>> {
         trace!("Key pressed: {}", key);
 
         self.get_binding(key)
     }
 
-    pub fn on_key_released(&self, key: &str) -> Option<String> {
+    pub fn on_key_released(&self, key: &str) -> anyhow::Result<Option<String>> {
         trace!("Key released: {}", key);
 
         self.get_binding(key)
     }
 
-    fn get_binding(&self, key: &str) -> Option<String> {
+    fn get_binding(&self, key: &str) -> anyhow::Result<Option<String>> {
         let key = self.mappings.get(key);
         self.bindings.get(&key)
     }

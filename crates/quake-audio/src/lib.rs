@@ -1,94 +1,66 @@
 use std::io::Cursor;
-use std::sync::{Arc, RwLock};
+use std::sync::Mutex;
 
 pub mod builtins;
 
 pub struct AudioManager {
-    manager: kira::AudioManager,
-    channel: Option<kira::sound::static_sound::StaticSoundHandle>,
-
-    resources: Arc<RwLock<quake_resources::Resources>>,
+    manager: Mutex<kira::AudioManager>,
+    channel: Option<Mutex<kira::sound::static_sound::StaticSoundHandle>>,
 }
 
 impl AudioManager {
-    pub fn new(resources: Arc<RwLock<quake_resources::Resources>>) -> anyhow::Result<Self> {
+    pub fn new() -> anyhow::Result<Self> {
         Ok(Self {
-            manager: kira::AudioManager::<kira::DefaultBackend>::new(
+            manager: Mutex::new(kira::AudioManager::<kira::DefaultBackend>::new(
                 kira::AudioManagerSettings::default(),
-            )?,
+            )?),
             channel: None,
-
-            resources,
         })
     }
 
-    pub fn play_sound(&mut self, name: &str) -> anyhow::Result<()> {
-        let sound_data = {
-            let mut resources = self
-                .resources
-                .write()
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            self.load_resource_audio(&mut *resources, name)?
-                .data
-                .clone()
-        };
+    pub fn play_sound<D>(&self, sound: D) -> anyhow::Result<()>
+    where
+        D: kira::sound::SoundData,
+    {
+        let mut manager = self.manager.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+        manager.play(sound).map_err(|e| anyhow::anyhow!("{}", e))?;
+        Ok(())
+    }
 
-        self.manager.play(sound_data)?;
+    pub fn play_music<D>(&self, music: D) -> anyhow::Result<()>
+    where
+        D: kira::sound::SoundData,
+    {
+        self.stop_music()?;
+
+        let mut manager = self.manager.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+        manager.play(music).map_err(|e| anyhow::anyhow!("{}", e))?;
 
         Ok(())
     }
 
-    pub fn play_music(&mut self, name: &str, looped: bool) -> anyhow::Result<()> {
-        let track_name = format!("music/track{:02}.ogg", name.parse::<u32>()?);
-
-        let sound_data = {
-            let mut resources = self
-                .resources
-                .write()
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            self.load_resource_audio(&mut *resources, track_name.as_str())?
-                .data
-                .clone()
-        };
-
-        self.stop_music();
-
-        let sound_data = if looped {
-            sound_data.with_settings(
-                kira::sound::static_sound::StaticSoundSettings::default().loop_region(..),
-            )
-        } else {
-            sound_data
-        };
-        self.channel = Some(self.manager.play(sound_data)?);
-
+    pub fn stop_music(&self) -> anyhow::Result<()> {
+        if let Some(channel) = &self.channel {
+            let mut channel = channel.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+            channel.stop(kira::Tween::default());
+        }
         Ok(())
     }
 
-    pub fn stop_music(&mut self) {
-        if let Some(channel) = &mut self.channel {
-            channel.stop(kira::Tween::default())
+    pub fn pause_music(&self) -> anyhow::Result<()> {
+        if let Some(channel) = &self.channel {
+            let mut channel = channel.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+            channel.pause(kira::Tween::default());
         }
+        Ok(())
     }
 
-    pub fn pause_music(&mut self) {
-        if let Some(channel) = &mut self.channel {
-            channel.pause(kira::Tween::default())
+    pub fn resume_music(&self) -> anyhow::Result<()> {
+        if let Some(channel) = &self.channel {
+            let mut channel = channel.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
+            channel.resume(kira::Tween::default());
         }
-    }
-
-    pub fn resume_music(&mut self) {
-        if let Some(channel) = &mut self.channel {
-            channel.resume(kira::Tween::default())
-        }
-    }
-
-    fn load_resource_audio(
-        &self,
-        resources: &mut quake_resources::Resources,
-        name: &str,
-    ) -> anyhow::Result<Arc<Snd>> {
-        resources.by_cached_name::<Snd>(name)
+        Ok(())
     }
 }
 

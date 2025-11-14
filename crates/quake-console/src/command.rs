@@ -1,3 +1,4 @@
+use quake_traits::ControlFlow;
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Default)]
@@ -115,17 +116,8 @@ impl CommandVariables {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
-pub enum ControlFlow {
-    #[default]
-    Poll,
-    Wait,
-}
-
 #[derive(Default)]
-pub struct CommandExecutor {
-    control_flow: ControlFlow,
-}
+pub struct CommandExecutor;
 
 impl CommandExecutor {
     pub async fn execute(
@@ -135,33 +127,33 @@ impl CommandExecutor {
         variables: &mut CommandVariables,
         registry: &mut CommandRegistry,
     ) -> anyhow::Result<()> {
-        self.control_flow = ControlFlow::Poll;
         while let Some(command_line) = buffer.pop_front() {
             let (name, args) = self.parse_command_line(&command_line);
 
-            if self.try_execute_alias(aliases, buffer, &name) {
+            if let Some(command_line) = aliases.get(name) {
+                buffer.push_front(command_line);
                 continue;
             }
 
-            if self.try_execute_command(registry, &name, &args).await? {
-                if self.control_flow == ControlFlow::Wait {
-                    break;
+            if let Some(command_handler) = registry.get_mut(name) {
+                match command_handler
+                    .handle_command(
+                        &std::iter::once(name)
+                            .chain(args.iter().copied())
+                            .collect::<Vec<_>>(),
+                    )
+                    .await?
+                {
+                    ControlFlow::Wait => break,
+                    ControlFlow::Poll => continue,
                 }
-                continue;
             }
 
-            self.assign_variable(variables, &name, &args);
+            let value = args.join(" ");
+            variables.set(name, &value);
         }
 
         Ok(())
-    }
-
-    pub fn get_control_flow(&self) -> ControlFlow {
-        self.control_flow
-    }
-
-    pub fn set_control_flow(&mut self, control_flow: ControlFlow) {
-        self.control_flow = control_flow;
     }
 
     fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
@@ -169,44 +161,5 @@ impl CommandExecutor {
         let name = args.next().unwrap_or("");
         let args = args.collect::<Vec<_>>();
         (name, args)
-    }
-
-    fn try_execute_alias(
-        &self,
-        aliases: &CommandAliases,
-        buffer: &mut CommandBuffer,
-        name: &str,
-    ) -> bool {
-        if let Some(command_line) = aliases.get(name) {
-            buffer.push_front(command_line);
-            true
-        } else {
-            false
-        }
-    }
-
-    async fn try_execute_command(
-        &self,
-        registry: &mut CommandRegistry,
-        name: &str,
-        args: &[&str],
-    ) -> anyhow::Result<bool> {
-        if let Some(command_handler) = registry.get_mut(name) {
-            command_handler
-                .handle_command(
-                    &std::iter::once(name)
-                        .chain(args.iter().copied())
-                        .collect::<Vec<_>>(),
-                )
-                .await?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    fn assign_variable(&self, variables: &mut CommandVariables, name: &str, args: &[&str]) {
-        let value = args.join(" ");
-        variables.set(name, &value);
     }
 }

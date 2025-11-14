@@ -2,7 +2,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
 use std::any::Any;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 pub mod bsp;
 pub mod builtins;
@@ -30,7 +30,7 @@ impl FromBytes for String {
 pub struct Resources {
     base_path: std::path::PathBuf,
     pak: pak::Pak,
-    cache: HashMap<String, Arc<dyn Any + Send + Sync>>,
+    cache: RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>,
 }
 
 impl Resources {
@@ -50,7 +50,7 @@ impl Resources {
         Ok(Self {
             base_path,
             pak,
-            cache: HashMap::new(),
+            cache: RwLock::new(HashMap::new()),
         })
     }
 
@@ -60,8 +60,9 @@ impl Resources {
             .or_else(|_| self.pak.by_name(name))
     }
 
-    pub fn by_cached_name<T: FromBytes + 'static>(&mut self, name: &str) -> anyhow::Result<Arc<T>> {
-        if let Some(cached_data) = self.cache.get(name) {
+    pub fn by_cached_name<T: FromBytes + 'static>(&self, name: &str) -> anyhow::Result<Arc<T>> {
+        let cache = self.cache.read().map_err(|e| anyhow::anyhow!("{}", e))?;
+        if let Some(cached_data) = cache.get(name) {
             let typed_data = cached_data
                 .clone()
                 .downcast::<T>()
@@ -71,12 +72,14 @@ impl Resources {
 
         let data = Arc::new(self.by_name::<T>(name)?);
 
-        self.cache.insert(name.to_owned(), data.clone());
+        let mut cache = self.cache.write().map_err(|e| anyhow::anyhow!("{}", e))?;
+        cache.insert(name.to_owned(), data.clone());
         Ok(data)
     }
 
     pub fn cached_names(&self) -> impl Iterator<Item = String> {
-        self.cache.keys().cloned()
+        let cache = self.cache.read().unwrap();
+        cache.keys().cloned().collect::<Vec<_>>().into_iter()
     }
 
     pub fn file_names(&self) -> impl Iterator<Item = String> {
@@ -103,8 +106,10 @@ impl Resources {
         base_files.into_iter().chain(self.pak.file_names()).sorted()
     }
 
-    pub fn flush(&mut self) {
-        self.cache.clear();
+    pub fn flush(&self) -> anyhow::Result<()> {
+        let mut cache = self.cache.write().map_err(|e| anyhow::anyhow!("{}", e))?;
+        cache.clear();
+        Ok(())
     }
 
     fn load_from_filesystem<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
