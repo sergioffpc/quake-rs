@@ -40,7 +40,7 @@ impl Console {
 
     pub async fn execute(&self) -> anyhow::Result<()> {
         while let Some(command_line) = self.fetch_next_command()?.as_deref() {
-            let (name, args) = self.parse_command_line(&command_line);
+            let (name, args) = self.parse_command_line(command_line);
 
             if let Some(command_line) = self.command_aliases.read().get(name) {
                 self.command_buffer.write().push_front(command_line);

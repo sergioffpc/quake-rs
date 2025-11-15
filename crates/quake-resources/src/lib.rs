@@ -94,7 +94,7 @@ impl Resources {
             .filter(|path| {
                 !path
                     .extension()
-                    .map(|ext| ext.to_ascii_lowercase() == "pak")
+                    .map(|ext| ext.eq_ignore_ascii_case("pak"))
                     .unwrap_or(false)
             })
             .map(|path| {
@@ -154,8 +154,8 @@ impl BoundingVolume {
         R: std::io::Read,
         F: Fn(&mut R) -> anyhow::Result<glam::Vec3>,
     {
-        let min = read_vector_fn(reader)?.into();
-        let max = read_vector_fn(reader)?.into();
+        let min = read_vector_fn(reader)?;
+        let max = read_vector_fn(reader)?;
 
         Ok(Self::Box { min, max })
     }
@@ -222,7 +222,7 @@ impl BoundingVolume {
                     radius: r2,
                 },
             ) => Self::Sphere {
-                center: Self::interpolate_vec3(&c1, &c2, t, &interpolate_fn),
+                center: Self::interpolate_vec3(c1, c2, t, &interpolate_fn),
                 radius: interpolate_fn(*r1, *r2, t),
             },
             (
@@ -235,8 +235,8 @@ impl BoundingVolume {
                     max: max2,
                 },
             ) => Self::Box {
-                min: Self::interpolate_vec3(&min1, &min2, t, &interpolate_fn),
-                max: Self::interpolate_vec3(&max1, &max2, t, &interpolate_fn),
+                min: Self::interpolate_vec3(min1, min2, t, &interpolate_fn),
+                max: Self::interpolate_vec3(max1, max2, t, &interpolate_fn),
             },
             _ => panic!("Unsupported bounding volumes"),
         }

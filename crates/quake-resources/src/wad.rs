@@ -94,7 +94,7 @@ impl Wad {
     }
 
     pub fn file_names(&self) -> impl Iterator<Item = String> {
-        self.entries.keys().map(|s| s.clone())
+        self.entries.keys().cloned()
     }
 
     fn read_directory_entries<T>(

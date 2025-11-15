@@ -1,4 +1,4 @@
-use crate::{read_null_terminated_string, FromBytes};
+use crate::{FromBytes, read_null_terminated_string};
 use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -125,6 +125,6 @@ impl PakArchive {
     }
 
     fn file_names(&self) -> impl Iterator<Item = String> {
-        self.entries.keys().map(|s| s.clone())
+        self.entries.keys().cloned()
     }
 }

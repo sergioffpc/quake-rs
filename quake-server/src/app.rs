@@ -1,6 +1,6 @@
 use crate::Args;
 use std::fs::File;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Arc;
 use tracing::log::{error, info};
 
 pub fn run_app(args: Args) -> anyhow::Result<()> {
