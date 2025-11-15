@@ -1,5 +1,8 @@
 use clap::Parser;
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
+use tracing::log::error;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -26,5 +29,25 @@ fn main() {
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
         .init();
+
+    thread::spawn(|| {
+        loop {
+            thread::sleep(Duration::from_secs(5));
+            let deadlocks = parking_lot::deadlock::check_deadlock();
+            if deadlocks.is_empty() {
+                continue;
+            }
+
+            error!("{} deadlocks detected!", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                error!("Deadlock #{}", i);
+                for t in threads {
+                    error!("Thread Id {:#?}", t.thread_id());
+                    error!("{:#?}", t.backtrace());
+                }
+            }
+        }
+    });
+
     app::run_app(Args::parse()).unwrap();
 }

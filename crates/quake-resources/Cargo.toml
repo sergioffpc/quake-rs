@@ -10,6 +10,8 @@ quake-traits = { path = "../quake-traits" }
 anyhow.workspace = true
 async-trait.workspace = true
 glam.workspace = true
+parking_lot.workspace = true
+
 
 byteorder = "1.5.0"
 bitflags = "2.10.0"

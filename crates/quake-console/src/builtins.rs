@@ -18,11 +18,6 @@ impl ConsoleBuiltins {
     }
 
     fn builtin_alias(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        let mut command_aliases = self
-            .inner
-            .command_aliases
-            .write()
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
         let alias = args[0];
         if args.len() > 1 {
             let s = args[1..].join(" ");
@@ -31,9 +26,12 @@ impl ConsoleBuiltins {
                 .and_then(|s| s.strip_suffix('"'))
                 .unwrap_or(&s)
                 .replace(";", "\n");
-            command_aliases.register_alias(alias, &command_text);
+            self.inner
+                .command_aliases
+                .write()
+                .register_alias(alias, &command_text);
         } else {
-            command_aliases.unregister_alias(alias);
+            self.inner.command_aliases.write().unregister_alias(alias);
         }
         Ok(ControlFlow::Poll)
     }
@@ -46,12 +44,7 @@ impl ConsoleBuiltins {
 
     fn builtin_exec(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
         if let Ok(text) = self.resources.by_name::<String>(args[0]) {
-            let mut command_buffer = self
-                .inner
-                .command_buffer
-                .write()
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            command_buffer.push_front(&text);
+            self.inner.command_buffer.write().push_front(&text);
         }
         Ok(ControlFlow::Poll)
     }

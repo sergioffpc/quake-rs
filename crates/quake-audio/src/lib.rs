@@ -1,5 +1,5 @@
+use parking_lot::Mutex;
 use std::io::Cursor;
-use std::sync::Mutex;
 
 pub mod builtins;
 
@@ -22,8 +22,10 @@ impl AudioManager {
     where
         D: kira::sound::SoundData,
     {
-        let mut manager = self.manager.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
-        manager.play(sound).map_err(|e| anyhow::anyhow!("{}", e))?;
+        self.manager
+            .lock()
+            .play(sound)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         Ok(())
     }
 
@@ -33,32 +35,31 @@ impl AudioManager {
     {
         self.stop_music()?;
 
-        let mut manager = self.manager.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
-        manager.play(music).map_err(|e| anyhow::anyhow!("{}", e))?;
+        self.manager
+            .lock()
+            .play(music)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
 
         Ok(())
     }
 
     pub fn stop_music(&self) -> anyhow::Result<()> {
         if let Some(channel) = &self.channel {
-            let mut channel = channel.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
-            channel.stop(kira::Tween::default());
+            channel.lock().stop(kira::Tween::default());
         }
         Ok(())
     }
 
     pub fn pause_music(&self) -> anyhow::Result<()> {
         if let Some(channel) = &self.channel {
-            let mut channel = channel.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
-            channel.pause(kira::Tween::default());
+            channel.lock().pause(kira::Tween::default());
         }
         Ok(())
     }
 
     pub fn resume_music(&self) -> anyhow::Result<()> {
         if let Some(channel) = &self.channel {
-            let mut channel = channel.lock().map_err(|e| anyhow::anyhow!("{}", e))?;
-            channel.resume(kira::Tween::default());
+            channel.lock().resume(kira::Tween::default());
         }
         Ok(())
     }

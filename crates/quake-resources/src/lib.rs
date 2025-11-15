@@ -1,8 +1,9 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
+use parking_lot::RwLock;
 use std::any::Any;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 pub mod bsp;
 pub mod builtins;
@@ -61,26 +62,27 @@ impl Resources {
     }
 
     pub fn by_cached_name<T: FromBytes + 'static>(&self, name: &str) -> anyhow::Result<Arc<T>> {
-        let cache = self.cache.read().map_err(|e| anyhow::anyhow!("{}", e))?;
-        if let Some(cached_data) = cache.get(name) {
+        if let Some(cached_data) = self.cache.read().get(name) {
             let typed_data = cached_data
                 .clone()
                 .downcast::<T>()
                 .map_err(|_| anyhow::anyhow!("Cached data has wrong type for: {}", name))?;
             return Ok(typed_data);
         }
-        drop(cache); // Release read lock before acquiring write lock
 
         let data = Arc::new(self.by_name::<T>(name)?);
 
-        let mut cache = self.cache.write().map_err(|e| anyhow::anyhow!("{}", e))?;
-        cache.insert(name.to_owned(), data.clone());
+        self.cache.write().insert(name.to_owned(), data.clone());
         Ok(data)
     }
 
     pub fn cached_names(&self) -> impl Iterator<Item = String> {
-        let cache = self.cache.read().unwrap();
-        cache.keys().cloned().collect::<Vec<_>>().into_iter()
+        self.cache
+            .read()
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     pub fn file_names(&self) -> impl Iterator<Item = String> {
@@ -108,8 +110,7 @@ impl Resources {
     }
 
     pub fn flush(&self) -> anyhow::Result<()> {
-        let mut cache = self.cache.write().map_err(|e| anyhow::anyhow!("{}", e))?;
-        cache.clear();
+        self.cache.write().clear();
         Ok(())
     }
 

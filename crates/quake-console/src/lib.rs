@@ -1,7 +1,7 @@
+use parking_lot::RwLock;
 use quake_traits::ControlFlow;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
-use std::sync::RwLock;
 
 pub mod builtins;
 pub mod command;
@@ -19,44 +19,35 @@ impl Console {
     where
         H: quake_traits::CommandHandler + Clone + 'static,
     {
-        let mut command_registry = self
-            .command_registry
+        self.command_registry
             .write()
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        command_registry.register_commands_handler(commands, handler);
+            .register_commands_handler(commands, handler);
         Ok(())
     }
 
     pub fn unregister_command(&self, name: &str) -> anyhow::Result<()> {
-        let mut command_registry = self
-            .command_registry
-            .write()
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        command_registry.unregister_command(name);
+        self.command_registry.write().unregister_command(name);
         Ok(())
     }
 
     pub fn prepend_text(&mut self, text: &str) {
-        self.command_buffer.write().unwrap().push_front(text);
+        self.command_buffer.write().push_front(text);
     }
 
     pub fn append_text(&self, text: &str) {
-        self.command_buffer.write().unwrap().push_back(text);
+        self.command_buffer.write().push_back(text);
     }
 
     pub async fn execute(&self) -> anyhow::Result<()> {
         while let Some(command_line) = self.fetch_next_command()?.as_deref() {
             let (name, args) = self.parse_command_line(&command_line);
 
-            if let Some(command_line) = self.command_aliases.read().unwrap().get(name) {
-                self.command_buffer
-                    .write()
-                    .unwrap()
-                    .push_front(command_line);
+            if let Some(command_line) = self.command_aliases.read().get(name) {
+                self.command_buffer.write().push_front(command_line);
                 continue;
             }
 
-            if let Some(command_handler) = self.command_registry.write().unwrap().get_mut(name) {
+            if let Some(command_handler) = self.command_registry.write().get_mut(name) {
                 match command_handler
                     .handle_command(
                         &std::iter::once(name)
@@ -71,18 +62,14 @@ impl Console {
             }
 
             let value = args.join(" ");
-            self.command_variables.write().unwrap().set(name, &value);
+            self.command_variables.write().set(name, &value);
         }
 
         Ok(())
     }
 
     fn fetch_next_command(&self) -> anyhow::Result<Option<String>> {
-        let mut command_buffer = self
-            .command_buffer
-            .write()
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-        Ok(command_buffer.pop_front())
+        Ok(self.command_buffer.write().pop_front())
     }
 
     fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
@@ -92,7 +79,7 @@ impl Console {
         (name, args)
     }
 
-    pub async fn repl(&mut self) -> anyhow::Result<()> {
+    pub fn repl(&self) -> anyhow::Result<()> {
         let config = rustyline::Config::builder()
             .auto_add_history(true)
             .history_ignore_space(true)
@@ -102,7 +89,12 @@ impl Console {
 
         let mut rl = rustyline::Editor::with_config(config)?;
         rl.set_helper(Some(ConsoleHelper {
-            commands: self.list_of_registry_commands(),
+            commands: self
+                .command_registry
+                .read()
+                .commands()
+                .map(String::from)
+                .collect(),
         }));
 
         let history_file = ".quake_history";
@@ -113,7 +105,6 @@ impl Console {
             match readline {
                 Ok(line) => {
                     self.append_text(line.as_str());
-                    self.execute().await?;
                 }
                 Err(rustyline::error::ReadlineError::Interrupted)
                 | Err(rustyline::error::ReadlineError::Eof) => {
@@ -127,15 +118,6 @@ impl Console {
 
         rl.save_history(history_file)
             .map_err(|err| anyhow::anyhow!(err))
-    }
-
-    fn list_of_registry_commands(&self) -> Vec<String> {
-        self.command_registry
-            .read()
-            .unwrap()
-            .commands()
-            .map(String::from)
-            .collect()
     }
 }
 

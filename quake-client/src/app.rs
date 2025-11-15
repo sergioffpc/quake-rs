@@ -40,6 +40,12 @@ impl App {
             render_manager: None,
         })
     }
+
+    fn repl(&self) -> anyhow::Result<()> {
+        let console = self.console.clone();
+        self.runtime.spawn(async move { console.repl() });
+        Ok(())
+    }
 }
 
 impl quake_window::WindowHandler for App {}
@@ -102,7 +108,7 @@ impl quake_window::WindowLifecycleHandler for App {
         self.render_manager = Some(render_manager);
 
         self.console.append_text("exec quake.rc");
-        self.console.append_text("bind F1 cd play 2");
+        self.repl()?;
 
         Ok(())
     }

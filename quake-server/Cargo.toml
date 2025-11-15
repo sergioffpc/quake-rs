@@ -11,6 +11,7 @@ quake-resources = { path = "../crates/quake-resources" }
 
 anyhow.workspace = true
 clap.workspace = true
+parking_lot.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
