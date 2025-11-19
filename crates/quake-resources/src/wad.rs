@@ -2,7 +2,7 @@ use crate::read_null_terminated_string;
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::collections::HashMap;
 
-impl crate::FromBytes for Wad {
+impl quake_traits::FromBytes for Wad {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         Wad::from_slice(bytes)
     }

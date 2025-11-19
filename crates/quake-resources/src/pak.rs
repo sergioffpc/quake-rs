@@ -1,4 +1,4 @@
-use crate::{FromBytes, read_null_terminated_string};
+use crate::read_null_terminated_string;
 use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ impl Pak {
         Ok(Self { archives })
     }
 
-    pub fn by_name<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
+    pub fn by_name<T: quake_traits::FromBytes>(&self, name: &str) -> anyhow::Result<T> {
         for archive in &self.archives {
             if let Ok(data) = archive.by_name(name) {
                 return T::from_bytes(&data);

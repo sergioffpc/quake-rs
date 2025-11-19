@@ -1,3 +1,4 @@
+use crate::{QUAKE_CONNECTION_REQUEST, QUAKE_DISCONNECT_REQUEST};
 use tokio::net::ToSocketAddrs;
 
 pub struct ClientManager {
@@ -11,27 +12,41 @@ impl ClientManager {
         })
     }
 
-    pub async fn connect<A>(&mut self, address: A) -> anyhow::Result<()>
+    pub async fn connect<A>(&self, address: A) -> anyhow::Result<()>
     where
         A: ToSocketAddrs,
     {
         self.socket.connect(address).await?;
+        // Capture the peer address before receiving data to modify it later
+        let mut remote_addr = self.socket.peer_addr()?;
 
-        const QUAKE_CONNECTION_REQUEST: &[u8] = b"\x01QUAKE\x03";
         self.socket.send(QUAKE_CONNECTION_REQUEST).await?;
+
+        const BUFFER_SIZE: usize = 1024;
+        let mut buf = [0u8; BUFFER_SIZE];
+
+        let n = self.socket.recv(&mut buf).await?;
+        if n != 4 {
+            anyhow::bail!("Invalid response size from server");
+        }
+
+        let port_bytes: [u8; 4] = buf[..4].try_into()?;
+        let remote_port = u32::from_be_bytes(port_bytes) as u16;
+
+        remote_addr.set_port(remote_port);
+        self.socket.connect(remote_addr).await?;
 
         Ok(())
     }
 
-    pub async fn reconnect(&mut self) -> anyhow::Result<()> {
+    pub async fn reconnect(&self) -> anyhow::Result<()> {
         self.disconnect().await?;
         self.connect(self.socket.local_addr().unwrap()).await?;
 
         Ok(())
     }
 
-    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
-        const QUAKE_DISCONNECT_REQUEST: &[u8] = b"\x02";
+    pub async fn disconnect(&self) -> anyhow::Result<()> {
         self.socket.send(QUAKE_DISCONNECT_REQUEST).await?;
 
         Ok(())

@@ -1,4 +1,3 @@
-use quake_resources::FromBytes;
 use std::io::BufRead;
 
 #[derive(Clone, Debug)]
@@ -19,7 +18,7 @@ impl Dem {
     }
 }
 
-impl FromBytes for Dem {
+impl quake_traits::FromBytes for Dem {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         Dem::from_bytes(bytes)
     }

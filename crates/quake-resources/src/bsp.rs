@@ -1,12 +1,12 @@
 use crate::bsp::MipTexture::BspTexture;
-use crate::{read_f32_bounding_box, read_i16_bounding_box, BoundingVolume, FromBytes};
+use crate::{BoundingVolume, read_f32_bounding_box, read_i16_bounding_box};
 use byteorder::{LittleEndian, ReadBytesExt};
+use nom::Parser;
 use nom::bytes::complete::take_while;
 use nom::character::complete::{char, multispace0};
 use nom::combinator::map;
 use nom::multi::many0;
 use nom::sequence::delimited;
-use nom::Parser;
 use std::collections::HashMap;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -419,7 +419,7 @@ impl Bsp {
     }
 }
 
-impl FromBytes for Bsp {
+impl quake_traits::FromBytes for Bsp {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         Bsp::from_slice(bytes)
     }

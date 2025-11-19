@@ -5,7 +5,7 @@ use std::time::Duration;
 use tracing::log::error;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 mod app;
 
@@ -24,7 +24,7 @@ struct Args {
     height: u32,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())
@@ -49,5 +49,5 @@ fn main() {
         }
     });
 
-    app::run_app(Args::parse()).unwrap();
+    app::run_app(Args::parse())
 }

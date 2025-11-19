@@ -1,10 +1,10 @@
 use crate::{
-    read_f32_bounding_sphere, read_f32_vector3, read_null_terminated_string, read_scaled_position,
-    read_scaled_position_bounding_box, BoundingVolume, FromBytes,
+    BoundingVolume, read_f32_bounding_sphere, read_f32_vector3, read_null_terminated_string,
+    read_scaled_position, read_scaled_position_bounding_box,
 };
 use byteorder::{LittleEndian, ReadBytesExt};
 
-impl FromBytes for Mdl {
+impl quake_traits::FromBytes for Mdl {
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         Mdl::from_slice(bytes)
     }

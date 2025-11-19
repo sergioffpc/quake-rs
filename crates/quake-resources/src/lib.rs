@@ -12,22 +12,6 @@ pub mod mdl;
 mod pak;
 mod wad;
 
-pub trait FromBytes: Sized + Sync + Send {
-    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self>;
-}
-
-impl FromBytes for Vec<u8> {
-    fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
-        Ok(data.to_vec())
-    }
-}
-
-impl FromBytes for String {
-    fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
-        Ok(String::from_utf8_lossy(data).to_string())
-    }
-}
-
 pub struct Resources {
     base_path: std::path::PathBuf,
     pak: pak::Pak,
@@ -55,13 +39,16 @@ impl Resources {
         })
     }
 
-    pub fn by_name<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
+    pub fn by_name<T: quake_traits::FromBytes>(&self, name: &str) -> anyhow::Result<T> {
         // Try loading from filesystem first, then fall back to PAK archives
         self.load_from_filesystem(name)
             .or_else(|_| self.pak.by_name(name))
     }
 
-    pub fn by_cached_name<T: FromBytes + 'static>(&self, name: &str) -> anyhow::Result<Arc<T>> {
+    pub fn by_cached_name<T: quake_traits::FromBytes + 'static>(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<Arc<T>> {
         if let Some(cached_data) = self.cache.read().get(name) {
             let typed_data = cached_data
                 .clone()
@@ -114,7 +101,7 @@ impl Resources {
         Ok(())
     }
 
-    fn load_from_filesystem<T: FromBytes>(&self, name: &str) -> anyhow::Result<T> {
+    fn load_from_filesystem<T: quake_traits::FromBytes>(&self, name: &str) -> anyhow::Result<T> {
         let path = self
             .base_path
             .join(name)
