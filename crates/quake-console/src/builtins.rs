@@ -44,7 +44,7 @@ impl ConsoleBuiltins {
 
     fn builtin_exec(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
         if let Ok(text) = self.resources.by_name::<String>(args[0]) {
-            self.inner.command_buffer.write().push_front(&text);
+            self.inner.command_buffer.lock().push_front(&text);
         }
         Ok(ControlFlow::Poll)
     }

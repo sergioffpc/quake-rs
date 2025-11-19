@@ -1,4 +1,4 @@
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use quake_traits::ControlFlow;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
@@ -8,7 +8,7 @@ pub mod command;
 
 #[derive(Default)]
 pub struct Console {
-    command_buffer: RwLock<command::CommandBuffer>,
+    command_buffer: Mutex<command::CommandBuffer>,
     command_aliases: RwLock<command::CommandAliases>,
     command_variables: RwLock<command::CommandVariables>,
     command_registry: RwLock<command::CommandRegistry>,
@@ -31,11 +31,11 @@ impl Console {
     }
 
     pub fn prepend_text(&mut self, text: &str) {
-        self.command_buffer.write().push_front(text);
+        self.command_buffer.lock().push_front(text);
     }
 
     pub fn append_text(&self, text: &str) {
-        self.command_buffer.write().push_back(text);
+        self.command_buffer.lock().push_back(text);
     }
 
     pub async fn execute(&self) -> anyhow::Result<()> {
@@ -43,7 +43,7 @@ impl Console {
             let (name, args) = self.parse_command_line(command_line);
 
             if let Some(command_line) = self.command_aliases.read().get(name) {
-                self.command_buffer.write().push_front(command_line);
+                self.command_buffer.lock().push_front(command_line);
                 continue;
             }
 
@@ -69,7 +69,7 @@ impl Console {
     }
 
     fn fetch_next_command(&self) -> anyhow::Result<Option<String>> {
-        Ok(self.command_buffer.write().pop_front())
+        Ok(self.command_buffer.lock().pop_front())
     }
 
     fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
