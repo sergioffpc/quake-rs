@@ -8,6 +8,5 @@ edition.workspace = true
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
-async-trait.workspace = true
 parking_lot.workspace = true
 tracing.workspace = true

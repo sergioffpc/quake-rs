@@ -15,25 +15,26 @@ impl ClientBuiltins {
         Self { inner }
     }
 
-    pub async fn builtin_connect(&self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        self.inner.connect(args[0]).await?;
+    pub fn builtin_connect(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+        self.inner.connect(args[0])?;
         Ok(ControlFlow::Poll)
     }
 
     pub fn builtin_reconnect(&self) -> anyhow::Result<ControlFlow> {
+        self.inner.reconnect()?;
         Ok(ControlFlow::Poll)
     }
 
     pub fn builtin_disconnect(&self) -> anyhow::Result<ControlFlow> {
+        self.inner.disconnect()?;
         Ok(ControlFlow::Poll)
     }
 }
 
-#[async_trait::async_trait]
 impl quake_traits::CommandHandler for ClientBuiltins {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
-            "connect" => self.builtin_connect(&command[1..]).await,
+            "connect" => self.builtin_connect(&command[1..]),
             "reconnect" => self.builtin_reconnect(),
             "disconnect" => self.builtin_disconnect(),
             _ => Ok(ControlFlow::Poll),
@@ -54,9 +55,8 @@ impl ServerBuiltins {
     }
 }
 
-#[async_trait::async_trait]
 impl quake_traits::CommandHandler for ServerBuiltins {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             _ => Ok(ControlFlow::Poll),
         }

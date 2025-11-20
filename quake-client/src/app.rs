@@ -1,5 +1,7 @@
 use crate::Args;
 use std::sync::Arc;
+use std::thread;
+use std::thread::JoinHandle;
 
 pub fn run_app(args: Args) -> anyhow::Result<()> {
     let app = App::new(args.base_path)?;
@@ -7,8 +9,6 @@ pub fn run_app(args: Args) -> anyhow::Result<()> {
 }
 
 struct App {
-    runtime: tokio::runtime::Runtime,
-
     resources: Arc<quake_resources::Resources>,
     console: Arc<quake_console::Console>,
 
@@ -23,14 +23,10 @@ impl App {
     where
         P: AsRef<std::path::Path>,
     {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()?;
         let resources = Arc::new(quake_resources::Resources::new(path)?);
         let console = Arc::new(quake_console::Console::default());
 
         Ok(Self {
-            runtime,
             resources,
             console,
 
@@ -41,10 +37,9 @@ impl App {
         })
     }
 
-    fn repl(&self) -> anyhow::Result<()> {
+    fn repl(&self) -> JoinHandle<anyhow::Result<()>> {
         let console = self.console.clone();
-        self.runtime.spawn(async move { console.repl() });
-        Ok(())
+        thread::spawn(move || console.repl())
     }
 }
 
@@ -79,10 +74,7 @@ impl quake_window::WindowLifecycleHandler for App {
         )?;
         self.audio_manager = Some(audio_manager);
 
-        let client_manager = Arc::new(
-            self.runtime
-                .block_on(quake_network::client::ClientManager::new())?,
-        );
+        let client_manager = Arc::new(quake_network::client::ClientManager::new()?);
         let client_manager_builtins =
             quake_network::builtins::ClientBuiltins::new(client_manager.clone());
         self.console.register_commands_handler(
@@ -100,15 +92,12 @@ impl quake_window::WindowLifecycleHandler for App {
         )?;
         self.input_manager = Some(input_manager);
 
-        let render_manager = self.runtime.block_on(quake_render::RenderManager::new(
-            window.clone(),
-            window.width(),
-            window.width(),
-        ))?;
+        let render_manager =
+            quake_render::RenderManager::new(window.clone(), window.width(), window.width())?;
         self.render_manager = Some(render_manager);
 
         self.console.append_text("exec quake.rc");
-        self.repl()?;
+        self.repl();
 
         Ok(())
     }
@@ -131,7 +120,7 @@ impl quake_window::WindowEventHandler for App {
     }
 
     fn on_update_frame(&mut self, delta_time: f64) -> anyhow::Result<()> {
-        self.runtime.block_on(self.console.execute())
+        self.console.execute()
     }
 
     fn on_render_frame(&self) -> anyhow::Result<()> {

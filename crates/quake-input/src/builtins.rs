@@ -41,9 +41,8 @@ impl InputBuiltins {
     }
 }
 
-#[async_trait::async_trait]
 impl quake_traits::CommandHandler for InputBuiltins {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "bind" => self.builtin_bind(&command[1..]),
             "unbind" => self.builtin_unbind(&command[1..]),

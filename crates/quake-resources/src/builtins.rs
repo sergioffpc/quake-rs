@@ -33,9 +33,8 @@ impl ResourcesBuiltins {
     }
 }
 
-#[async_trait::async_trait]
 impl quake_traits::CommandHandler for ResourcesBuiltins {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "cat" => self.builtin_cat(&command[1..]),
             "flush" => self.builtin_flush(),

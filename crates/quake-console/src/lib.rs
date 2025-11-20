@@ -38,9 +38,9 @@ impl Console {
         self.command_buffer.lock().push_back(text);
     }
 
-    pub async fn execute(&self) -> anyhow::Result<()> {
-        while let Some(command_line) = self.fetch_next_command()?.as_deref() {
-            let (name, args) = self.parse_command_line(command_line);
+    pub fn execute(&self) -> anyhow::Result<()> {
+        while let Some(command_line) = self.fetch_next_command() {
+            let (name, args) = self.parse_command_line(command_line.as_str());
 
             if let Some(command_line) = self.command_aliases.read().get(name) {
                 self.command_buffer.lock().push_front(command_line);
@@ -48,14 +48,11 @@ impl Console {
             }
 
             if let Some(command_handler) = self.command_registry.write().get_mut(name) {
-                match command_handler
-                    .handle_command(
-                        &std::iter::once(name)
-                            .chain(args.iter().copied())
-                            .collect::<Vec<_>>(),
-                    )
-                    .await?
-                {
+                match command_handler.handle_command(
+                    &std::iter::once(name)
+                        .chain(args.iter().copied())
+                        .collect::<Vec<_>>(),
+                )? {
                     ControlFlow::Wait => break,
                     ControlFlow::Poll => continue,
                 }
@@ -68,8 +65,8 @@ impl Console {
         Ok(())
     }
 
-    fn fetch_next_command(&self) -> anyhow::Result<Option<String>> {
-        Ok(self.command_buffer.lock().pop_front())
+    fn fetch_next_command(&self) -> Option<String> {
+        self.command_buffer.lock().pop_front()
     }
 
     fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {

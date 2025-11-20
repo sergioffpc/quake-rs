@@ -9,7 +9,6 @@ quake-resources = { path = "../quake-resources" }
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
-async-trait.workspace = true
 parking_lot.workspace = true
 
 kira = "0.11.0"

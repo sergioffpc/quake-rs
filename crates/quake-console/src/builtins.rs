@@ -69,9 +69,8 @@ impl ConsoleBuiltins {
     }
 }
 
-#[async_trait::async_trait]
 impl quake_traits::CommandHandler for ConsoleBuiltins {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "alias" => self.builtin_alias(&command[1..]),
             "echo" => self.builtin_echo(&command[1..]),

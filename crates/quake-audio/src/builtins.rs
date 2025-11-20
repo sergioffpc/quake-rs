@@ -67,9 +67,8 @@ impl AudioBuiltins {
     }
 }
 
-#[async_trait::async_trait]
 impl quake_traits::CommandHandler for AudioBuiltins {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "play" => self.builtin_play(&command[1..]),
             "cd" => self.builtin_cd(&command[1..]),

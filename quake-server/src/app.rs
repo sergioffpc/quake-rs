@@ -1,6 +1,9 @@
 use crate::Args;
 use std::fs::File;
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
+use std::thread;
+use std::thread::JoinHandle;
 use tracing::log::{error, info};
 
 pub fn run_app(args: Args) -> anyhow::Result<()> {
@@ -24,30 +27,21 @@ pub fn run_app(args: Args) -> anyhow::Result<()> {
         }
     }
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    runtime.block_on(async {
-        let app = App::new(args.base_path, args.listen).await?;
-        app.server_manager.listen().await
-    })
+    let app = App::new(args.base_path)?;
+    app.start(args.listen)
 }
 
 struct App {
-    resources: Arc<quake_resources::Resources>,
     console: Arc<quake_console::Console>,
-    server_manager: Arc<quake_network::server::ServerManager>,
 }
 
 impl App {
-    async fn new<P, A>(path: P, address: A) -> anyhow::Result<Self>
+    fn new<P>(path: P) -> anyhow::Result<Self>
     where
         P: AsRef<std::path::Path>,
-        A: tokio::net::ToSocketAddrs,
     {
         let resources = Arc::new(quake_resources::Resources::new(path)?);
         let console = Arc::new(quake_console::Console::default());
-        let server_manager = Arc::new(quake_network::server::ServerManager::new(address).await?);
 
         let resources_builtins =
             quake_resources::builtins::ResourcesBuiltins::new(resources.clone());
@@ -65,19 +59,56 @@ impl App {
                 console_builtins.clone(),
             )?;
         }
+
+        Ok(Self { console })
+    }
+
+    fn start<A>(&self, address: A) -> anyhow::Result<()>
+    where
+        A: ToSocketAddrs,
+    {
+        let handles = vec![
+            self.spawn_tick_loop(),
+            self.spawn_repl_loop(),
+            self.spawn_listen_loop(address)?,
+        ];
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        Ok(())
+    }
+
+    fn spawn_tick_loop(&self) -> JoinHandle<()> {
+        let console = self.console.clone();
+        thread::spawn(move || {
+            loop {
+                thread::sleep(std::time::Duration::from_millis(30));
+                console.execute().unwrap();
+            }
+        })
+    }
+
+    fn spawn_repl_loop(&self) -> JoinHandle<()> {
+        let console = self.console.clone();
+        thread::spawn(move || console.repl().unwrap())
+    }
+
+    fn spawn_listen_loop<A>(&self, address: A) -> anyhow::Result<JoinHandle<()>>
+    where
+        A: ToSocketAddrs,
+    {
+        let server_manager = Arc::new(quake_network::server::ServerManager::new(address)?);
         let server_manager_builtins =
             quake_network::builtins::ServerBuiltins::new(server_manager.clone());
         {
-            console.register_commands_handler(
+            self.console.register_commands_handler(
                 quake_network::builtins::ServerBuiltins::BUILTIN_COMMANDS,
                 server_manager_builtins.clone(),
             )?;
         }
-
-        Ok(Self {
-            resources,
-            console,
-            server_manager,
-        })
+        let handle = thread::spawn(move || server_manager.start().unwrap());
+        Ok(handle)
     }
 }
