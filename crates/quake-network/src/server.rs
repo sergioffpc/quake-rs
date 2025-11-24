@@ -51,7 +51,7 @@ struct ConnectionControlRequestHandler {
 
 impl RequestHandler for ConnectionControlRequestHandler {
     fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()> {
-        if &data[1..] != b"QUAKE\x03" {
+        if data != b"QUAKE\x03" {
             return Err(anyhow::anyhow!("Invalid connection control request"));
         }
 
@@ -81,7 +81,7 @@ struct ServerInfoControlRequestHandler;
 
 impl RequestHandler for ServerInfoControlRequestHandler {
     fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()> {
-        if &data[1..] != b"QUAKE\x03" {
+        if data != b"QUAKE\x03" {
             return Err(anyhow::anyhow!("Invalid server info control request"));
         }
 
