@@ -22,6 +22,7 @@ impl ClientManager {
         A: ToSocketAddrs,
     {
         self.socket.connect(address)?;
+
         // Capture the peer address before receiving data to modify it later
         let mut remote_addr = self.socket.peer_addr()?;
 
@@ -53,13 +54,6 @@ impl ClientManager {
             }
             _ => Err(anyhow::anyhow!("Invalid connection control response")),
         }
-    }
-
-    pub fn reconnect(&self) -> anyhow::Result<()> {
-        self.disconnect()?;
-        self.connect(self.socket.local_addr().unwrap())?;
-
-        Ok(())
     }
 
     pub fn disconnect(&self) -> anyhow::Result<()> {

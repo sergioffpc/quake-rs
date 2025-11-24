@@ -2,7 +2,9 @@ pub mod builtins;
 pub mod client;
 pub mod server;
 
+mod connection;
 mod dem;
+mod dispatcher;
 
 const CONNECTION_CONTROL_REQUEST: u8 = 0x01;
 const SERVER_INFO_CONTROL_REQUEST: u8 = 0x02;
