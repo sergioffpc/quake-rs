@@ -1,6 +1,10 @@
-use crate::{ACCEPT_CONNECTION_CONTROL_RESPONSE, DISCONNECT_CLIENT_REQUEST};
+use crate::{
+    ACCEPT_CONNECTION_CONTROL_RESPONSE, CONNECTION_CONTROL_REQUEST, DISCONNECT_REQUEST,
+    REJECT_CONNECTION_CONTROL_RESPONSE,
+};
 use bytes::{BufMut, BytesMut};
 use std::net::ToSocketAddrs;
+use tracing::log::info;
 
 pub struct ClientManager {
     socket: std::net::UdpSocket,
@@ -22,26 +26,33 @@ impl ClientManager {
         let mut remote_addr = self.socket.peer_addr()?;
 
         let mut buf = BytesMut::new();
-        buf.put_u8(ACCEPT_CONNECTION_CONTROL_RESPONSE);
+        buf.put_u8(CONNECTION_CONTROL_REQUEST);
         buf.put_slice(b"QUAKE");
         buf.put_u8(3);
         self.socket.send(&buf)?;
 
         const BUFFER_SIZE: usize = 1024;
         let mut buf = [0u8; BUFFER_SIZE];
-
         let n = self.socket.recv(&mut buf)?;
-        if n != 4 {
-            anyhow::bail!("Invalid response size from server");
+
+        let data = &buf[..n];
+        match data[0] {
+            ACCEPT_CONNECTION_CONTROL_RESPONSE => {
+                let port_bytes: [u8; 4] = data[1..5].try_into()?;
+                let remote_port = u32::from_be_bytes(port_bytes) as u16;
+
+                remote_addr.set_port(remote_port);
+                self.socket.connect(remote_addr)?;
+
+                info!("Connected to server at {}", remote_addr);
+
+                Ok(())
+            }
+            REJECT_CONNECTION_CONTROL_RESPONSE => {
+                Err(anyhow::anyhow!("Connection rejected by server"))
+            }
+            _ => Err(anyhow::anyhow!("Invalid connection control response")),
         }
-
-        let port_bytes: [u8; 4] = buf[..4].try_into()?;
-        let remote_port = u32::from_be_bytes(port_bytes) as u16;
-
-        remote_addr.set_port(remote_port);
-        self.socket.connect(remote_addr)?;
-
-        Ok(())
     }
 
     pub fn reconnect(&self) -> anyhow::Result<()> {
@@ -53,7 +64,7 @@ impl ClientManager {
 
     pub fn disconnect(&self) -> anyhow::Result<()> {
         let mut buf = BytesMut::new();
-        buf.put_u8(DISCONNECT_CLIENT_REQUEST);
+        buf.put_u8(DISCONNECT_REQUEST);
         self.socket.send(&buf)?;
 
         Ok(())

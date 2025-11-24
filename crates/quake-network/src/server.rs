@@ -1,28 +1,131 @@
 use crate::{
-    ACCEPT_CONNECTION_CONTROL_RESPONSE, CONNECTION_CONTROL_REQUEST, DISCONNECT_CLIENT_REQUEST,
+    ACCEPT_CONNECTION_CONTROL_RESPONSE, CONNECTION_CONTROL_REQUEST, DISCONNECT_REQUEST,
     PLAYER_INFO_CONTROL_REQUEST, RULE_INFO_CONTROL_REQUEST, SERVER_INFO_CONTROL_REQUEST,
 };
 use bytes::{BufMut, BytesMut};
+use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::Duration;
 use tracing::log::{error, info, warn};
+
+#[derive(Default)]
+struct RequestDispatcher {
+    handlers: HashMap<u8, Box<dyn RequestHandler>>,
+}
+
+impl RequestDispatcher {
+    fn dispatch(&self, from: std::net::SocketAddr, data: &[u8]) {
+        if data.is_empty() {
+            return;
+        }
+
+        if let Some(handler) = self.handlers.get(&data[0]) {
+            if let Err(e) = handler.handle(from, &data[1..]) {
+                error!("Error handling request from {}: {}", from, e);
+            }
+        } else {
+            warn!("Received unknown packet from {}", from);
+        }
+    }
+
+    fn register_handler(&mut self, packet_type: u8, handler: Box<dyn RequestHandler>) {
+        self.handlers.insert(packet_type, handler);
+    }
+
+    fn unregister_handler(&mut self, packet_type: u8) {
+        self.handlers.remove(&packet_type);
+    }
+}
+
+trait RequestHandler: Send + Sync {
+    fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()>;
+}
+
+struct ConnectionControlRequestHandler {
+    connection_manager: Arc<ConnectionManager>,
+}
+
+impl RequestHandler for ConnectionControlRequestHandler {
+    fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()> {
+        if &data[1..] != b"QUAKE\x03" {
+            return Err(anyhow::anyhow!("Invalid connection control request"));
+        }
+
+        info!("Received connection control request from {}", from);
+
+        let connection_manager = self.connection_manager.clone();
+        let connection = Arc::new(Connection::new(connection_manager)?);
+        let local_addr = connection.local_addr()?;
+        self.connection_manager
+            .connections
+            .add(local_addr, connection.clone());
+
+        let mut buf = BytesMut::new();
+        buf.put_u8(ACCEPT_CONNECTION_CONTROL_RESPONSE);
+        buf.put_u32(local_addr.port() as u32);
+        self.connection_manager.socket.send_to(&buf, from)?;
+
+        info!("Connection established with {}", from);
+
+        connection.listen();
+
+        Ok(())
+    }
+}
+
+struct ServerInfoControlRequestHandler;
+
+impl RequestHandler for ServerInfoControlRequestHandler {
+    fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()> {
+        if &data[1..] != b"QUAKE\x03" {
+            return Err(anyhow::anyhow!("Invalid server info control request"));
+        }
+
+        info!("Received server info control request from {}", from);
+        Ok(())
+    }
+}
+
+struct DisconnectRequestHandler {
+    connection_manager: Arc<ConnectionManager>,
+}
+
+impl RequestHandler for DisconnectRequestHandler {
+    fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()> {
+        info!("Received disconnect request from {}", from);
+        self.connection_manager.connections.remove(from);
+        Ok(())
+    }
+}
 
 struct Connection {
     running: Arc<AtomicBool>,
     socket: std::net::UdpSocket,
+    request_dispatcher: Arc<RwLock<RequestDispatcher>>,
 }
 
 impl Connection {
-    fn new() -> anyhow::Result<Self> {
+    fn new(connection_manager: Arc<ConnectionManager>) -> anyhow::Result<Self> {
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0")?;
+        socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+        let request_dispatcher = Arc::new(RwLock::new(RequestDispatcher::default()));
+        request_dispatcher.write().register_handler(
+            DISCONNECT_REQUEST,
+            Box::new(DisconnectRequestHandler { connection_manager }),
+        );
+
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
-            socket: std::net::UdpSocket::bind("0.0.0.0:0")?,
+            socket,
+            request_dispatcher,
         })
     }
 
-    fn start(&self) {
+    fn listen(&self) {
         self.running.store(true, Ordering::Relaxed);
         loop {
             if !self.running.load(Ordering::Relaxed) {
@@ -36,84 +139,65 @@ impl Connection {
                         continue;
                     }
                     let data = &buf[..n];
-                    match data[0] {
-                        DISCONNECT_CLIENT_REQUEST => self.stop(),
-                        _ => warn!("Received unknown packet from {}", from),
-                    }
+                    self.request_dispatcher.read().dispatch(from, data);
+                }
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    // recv_from() will block indefinitely. If stop() is called, the main loop
+                    // won't wake up until the next packet arrives.
+                    continue;
                 }
                 Err(e) => error!("Error receiving UDP packet: {}", e),
             }
         }
     }
 
-    fn stop(&self) {
+    fn close(&self) {
         self.running.store(false, Ordering::Relaxed);
-    }
-
-    fn is_running(&self) -> bool {
-        self.running.load(Ordering::Relaxed)
     }
 
     fn local_addr(&self) -> anyhow::Result<std::net::SocketAddr> {
         self.socket
             .local_addr()
             .map_err(|e| anyhow::anyhow!("Failed to get local address: {}", e))
+    }
+}
+
+#[derive(Default)]
+struct Connections {
+    connections: dashmap::DashMap<std::net::SocketAddr, Arc<Connection>>,
+}
+
+impl Connections {
+    fn add(&self, addr: std::net::SocketAddr, connection: Arc<Connection>) {
+        self.connections.insert(addr, connection);
+    }
+
+    fn remove(&self, addr: std::net::SocketAddr) {
+        self.connections.remove(&addr);
+    }
+
+    fn close(&self) {
+        let addrs: Vec<_> = self.connections.iter().map(|e| *e.key()).collect();
+        for addr in addrs {
+            if let Some((_, conn)) = self.connections.remove(&addr) {
+                conn.close();
+            }
+        }
     }
 }
 
 struct ConnectionManager {
     socket: std::net::UdpSocket,
-    connections: dashmap::DashMap<std::net::SocketAddr, Arc<Connection>>,
-}
-
-impl ConnectionManager {
-    pub fn new<A>(address: A) -> anyhow::Result<Self>
-    where
-        A: ToSocketAddrs,
-    {
-        let socket = std::net::UdpSocket::bind(address)?;
-        let connections = dashmap::DashMap::default();
-        let connections_cleanup = connections.clone();
-
-        thread::spawn(move || {
-            loop {
-                thread::sleep(std::time::Duration::from_secs(5));
-                connections_cleanup.retain(|_, conn: &mut Arc<Connection>| {
-                    if conn.is_running() {
-                        true
-                    } else {
-                        info!(
-                            "Connection {} has been removed from the list of connections",
-                            conn.local_addr().unwrap()
-                        );
-                        false
-                    }
-                });
-            }
-        });
-
-        Ok(Self {
-            socket,
-            connections,
-        })
-    }
-
-    fn add(&mut self, connection: Arc<Connection>) -> anyhow::Result<()> {
-        self.connections
-            .insert(connection.local_addr()?, connection);
-        Ok(())
-    }
-
-    fn local_addr(&self) -> anyhow::Result<std::net::SocketAddr> {
-        self.socket
-            .local_addr()
-            .map_err(|e| anyhow::anyhow!("Failed to get local address: {}", e))
-    }
+    connections: Arc<Connections>,
 }
 
 pub struct ServerManager {
     running: Arc<AtomicBool>,
     connection_manager: Arc<ConnectionManager>,
+    request_dispatcher: Arc<RwLock<RequestDispatcher>>,
 }
 
 impl ServerManager {
@@ -121,18 +205,37 @@ impl ServerManager {
     where
         A: ToSocketAddrs,
     {
-        let connection_manager = Arc::new(ConnectionManager::new(address)?);
+        let socket = std::net::UdpSocket::bind(address)?;
+        socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+
+        let connections = Arc::new(Connections::default());
+        let connection_manager = Arc::new(ConnectionManager {
+            socket,
+            connections,
+        });
+        let request_dispatcher = Arc::new(RwLock::new(RequestDispatcher::default()));
+        request_dispatcher.write().register_handler(
+            CONNECTION_CONTROL_REQUEST,
+            Box::new(ConnectionControlRequestHandler {
+                connection_manager: connection_manager.clone(),
+            }),
+        );
+        request_dispatcher.write().register_handler(
+            SERVER_INFO_CONTROL_REQUEST,
+            Box::new(ServerInfoControlRequestHandler),
+        );
 
         Ok(Self {
             running: Arc::new(AtomicBool::new(false)),
             connection_manager,
+            request_dispatcher,
         })
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
         info!(
             "Listening on {:?} for UDP packets...",
-            self.connection_manager.local_addr()?
+            self.connection_manager.socket.local_addr()?
         );
 
         const BUFFER_SIZE: usize = 1024;
@@ -148,74 +251,30 @@ impl ServerManager {
                     if n == 0 {
                         continue;
                     }
+                    let request_dispatcher = self.request_dispatcher.clone();
                     let data = buf[..n].to_vec();
-                    let connection_manager = self.connection_manager.clone();
                     thread::spawn(move || {
-                        Self::handle_control_request(from, data, connection_manager)
+                        request_dispatcher.read().dispatch(from, data.as_slice());
                     });
+                }
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    // recv_from() will block indefinitely. If stop() is called, the main loop
+                    // won't wake up until the next packet arrives.
+                    continue;
                 }
                 Err(e) => error!("Error receiving UDP packet: {}", e),
             }
         }
+
+        self.connection_manager.connections.close();
+
         Ok(())
     }
 
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
-    }
-
-    fn handle_control_request(
-        from: std::net::SocketAddr,
-        data: Vec<u8>,
-        connection_manager: Arc<ConnectionManager>,
-    ) -> anyhow::Result<()> {
-        match data[0] {
-            CONNECTION_CONTROL_REQUEST => {
-                if &data[1..] == b"QUAKE\x03" {
-                    info!("Received connection control request from {}", from);
-                    Self::handle_connection_control_request(from, connection_manager)?;
-                } else {
-                    warn!("Invalid connection control request from {}", from);
-                }
-            }
-            SERVER_INFO_CONTROL_REQUEST => {
-                if &data[1..] == b"QUAKE\x03" {
-                    info!("Received server info control request from {}", from);
-                } else {
-                    warn!("Invalid server info control request from {}", from);
-                }
-            }
-            PLAYER_INFO_CONTROL_REQUEST => {
-                info!("Received player info control request from {}", from);
-            }
-            RULE_INFO_CONTROL_REQUEST => {
-                info!("Received rule info control request from {}", from);
-            }
-            _ => warn!("Received unknown packet from {}", from),
-        }
-
-        Ok(())
-    }
-
-    fn handle_connection_control_request(
-        from: std::net::SocketAddr,
-        connection_manager: Arc<ConnectionManager>,
-    ) -> anyhow::Result<()> {
-        let connection = Arc::new(Connection::new()?);
-        let local_addr = connection.local_addr()?;
-        connection_manager
-            .connections
-            .insert(local_addr, connection.clone());
-
-        thread::spawn(move || connection.start());
-
-        let mut buf = BytesMut::new();
-        buf.put_u8(ACCEPT_CONNECTION_CONTROL_RESPONSE);
-        buf.put_u32(local_addr.port() as u32);
-        connection_manager.socket.send_to(&buf, from)?;
-
-        info!("Connection established with {}", from);
-
-        Ok(())
     }
 }
