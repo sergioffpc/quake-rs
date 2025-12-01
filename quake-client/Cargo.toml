@@ -15,7 +15,6 @@ quake-window = { path = "../crates/quake-window" }
 
 anyhow.workspace = true
 clap.workspace = true
-parking_lot.workspace = true
-tracing.workspace = true
+tokio.workspace = true
 tracing-subscriber.workspace = true
 

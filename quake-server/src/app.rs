@@ -1,9 +1,8 @@
 use crate::Args;
 use std::fs::File;
-use std::net::ToSocketAddrs;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::thread;
-use std::thread::JoinHandle;
+use tokio::task::JoinHandle;
 use tracing::log::{error, info};
 
 pub fn run_app(args: Args) -> anyhow::Result<()> {
@@ -28,10 +27,11 @@ pub fn run_app(args: Args) -> anyhow::Result<()> {
     }
 
     let app = App::new(args.base_path)?;
-    app.start(args.listen)
+    app.start(args.listen.parse()?)
 }
 
 struct App {
+    runtime: tokio::runtime::Runtime,
     console: Arc<quake_console::Console>,
 }
 
@@ -40,75 +40,73 @@ impl App {
     where
         P: AsRef<std::path::Path>,
     {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?;
         let resources = Arc::new(quake_resources::Resources::new(path)?);
         let console = Arc::new(quake_console::Console::default());
 
         let resources_builtins =
             quake_resources::builtins::ResourcesBuiltins::new(resources.clone());
-        {
-            console.register_commands_handler(
-                quake_resources::builtins::ResourcesBuiltins::BUILTIN_COMMANDS,
-                resources_builtins.clone(),
-            )?;
-        }
+        runtime.block_on(async {
+            console
+                .register_commands_handler(
+                    quake_resources::builtins::ResourcesBuiltins::BUILTIN_COMMANDS,
+                    resources_builtins.clone(),
+                )
+                .await
+                .unwrap();
+        });
         let console_builtins =
             quake_console::builtins::ConsoleBuiltins::new(console.clone(), resources.clone());
-        {
-            console.register_commands_handler(
-                quake_console::builtins::ConsoleBuiltins::BUILTIN_COMMANDS,
-                console_builtins.clone(),
-            )?;
-        }
+        runtime.block_on(async {
+            console
+                .register_commands_handler(
+                    quake_console::builtins::ConsoleBuiltins::BUILTIN_COMMANDS,
+                    console_builtins.clone(),
+                )
+                .await
+                .unwrap();
+        });
 
-        Ok(Self { console })
+        Ok(Self { runtime, console })
     }
 
-    fn start<A>(&self, address: A) -> anyhow::Result<()>
-    where
-        A: ToSocketAddrs,
-    {
+    fn start(&self, address: SocketAddr) -> anyhow::Result<()> {
         let handles = vec![
             self.spawn_tick_loop(),
             self.spawn_repl_loop(),
             self.spawn_listen_loop(address)?,
         ];
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
+        self.runtime.block_on(async {
+            for handle in handles {
+                handle.await.unwrap();
+            }
+        });
         Ok(())
     }
 
     fn spawn_tick_loop(&self) -> JoinHandle<()> {
         let console = self.console.clone();
-        thread::spawn(move || {
+        self.runtime.spawn(async move {
             loop {
-                thread::sleep(std::time::Duration::from_millis(30));
-                console.execute().unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                console.execute().await.unwrap();
             }
         })
     }
 
     fn spawn_repl_loop(&self) -> JoinHandle<()> {
         let console = self.console.clone();
-        thread::spawn(move || console.repl().unwrap())
+        self.runtime
+            .spawn(async move { console.repl().await.unwrap() })
     }
 
-    fn spawn_listen_loop<A>(&self, address: A) -> anyhow::Result<JoinHandle<()>>
-    where
-        A: ToSocketAddrs,
-    {
+    fn spawn_listen_loop(&self, address: SocketAddr) -> anyhow::Result<JoinHandle<()>> {
         let server_manager = Arc::new(quake_network::server::ServerManager::new(address)?);
-        let server_manager_builtins =
-            quake_network::builtins::ServerBuiltins::new(server_manager.clone());
-        {
-            self.console.register_commands_handler(
-                quake_network::builtins::ServerBuiltins::BUILTIN_COMMANDS,
-                server_manager_builtins.clone(),
-            )?;
-        }
-        let handle = thread::spawn(move || server_manager.start().unwrap());
+        let handle = self
+            .runtime
+            .spawn(async move { server_manager.accept().await });
         Ok(handle)
     }
 }

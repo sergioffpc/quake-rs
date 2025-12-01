@@ -1,7 +1,7 @@
-use parking_lot::{Mutex, RwLock};
 use quake_traits::ControlFlow;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
+use tokio::sync::{Mutex, RwLock};
 
 pub mod builtins;
 pub mod command;
@@ -15,58 +15,66 @@ pub struct Console {
 }
 
 impl Console {
-    pub fn register_commands_handler<H>(&self, commands: &[&str], handler: H) -> anyhow::Result<()>
+    pub async fn register_commands_handler<H>(
+        &self,
+        commands: &[&str],
+        handler: H,
+    ) -> anyhow::Result<()>
     where
         H: quake_traits::CommandHandler + Clone + 'static,
     {
         self.command_registry
             .write()
+            .await
             .register_commands_handler(commands, handler);
         Ok(())
     }
 
-    pub fn unregister_command(&self, name: &str) -> anyhow::Result<()> {
-        self.command_registry.write().unregister_command(name);
+    pub async fn unregister_command(&self, name: &str) -> anyhow::Result<()> {
+        self.command_registry.write().await.unregister_command(name);
         Ok(())
     }
 
-    pub fn prepend_text(&mut self, text: &str) {
-        self.command_buffer.lock().push_front(text);
+    pub async fn prepend_text(&mut self, text: &str) {
+        self.command_buffer.lock().await.push_front(text);
     }
 
-    pub fn append_text(&self, text: &str) {
-        self.command_buffer.lock().push_back(text);
+    pub async fn append_text(&self, text: &str) {
+        self.command_buffer.lock().await.push_back(text);
     }
 
-    pub fn execute(&self) -> anyhow::Result<()> {
-        while let Some(command_line) = self.fetch_next_command() {
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        while let Some(command_line) = self.fetch_next_command().await {
             let (name, args) = self.parse_command_line(command_line.as_str());
 
-            if let Some(command_line) = self.command_aliases.read().get(name) {
-                self.command_buffer.lock().push_front(command_line);
+            if let Some(command_line) = self.command_aliases.read().await.get(name) {
+                self.command_buffer.lock().await.push_front(command_line);
                 continue;
             }
 
-            if let Some(command_handler) = self.command_registry.write().get_mut(name) {
-                match command_handler.handle_command(
-                    &std::iter::once(name)
-                        .chain(args.iter().copied())
-                        .collect::<Vec<_>>(),
-                )? {
+            if let Some(command_handler) = self.command_registry.write().await.get_mut(name) {
+                match command_handler
+                    .handle_command(
+                        &std::iter::once(name)
+                            .chain(args.iter().copied())
+                            .collect::<Vec<_>>(),
+                    )
+                    .await?
+                {
                     ControlFlow::Wait => break,
                     ControlFlow::Poll => continue,
                 }
             }
 
             let value = args.join(" ");
-            self.command_variables.write().set(name, &value);
+            self.command_variables.write().await.set(name, &value);
         }
 
         Ok(())
     }
 
-    fn fetch_next_command(&self) -> Option<String> {
-        self.command_buffer.lock().pop_front()
+    async fn fetch_next_command(&self) -> Option<String> {
+        self.command_buffer.lock().await.pop_front()
     }
 
     fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
@@ -76,7 +84,7 @@ impl Console {
         (name, args)
     }
 
-    pub fn repl(&self) -> anyhow::Result<()> {
+    pub async fn repl(&self) -> anyhow::Result<()> {
         let config = rustyline::Config::builder()
             .auto_add_history(true)
             .history_ignore_space(true)
@@ -89,6 +97,7 @@ impl Console {
             commands: self
                 .command_registry
                 .read()
+                .await
                 .commands()
                 .map(String::from)
                 .collect(),
@@ -101,7 +110,7 @@ impl Console {
             let readline = rl.readline(">>> ");
             match readline {
                 Ok(line) => {
-                    self.append_text(line.as_str());
+                    self.append_text(line.as_str()).await;
                 }
                 Err(rustyline::error::ReadlineError::Interrupted)
                 | Err(rustyline::error::ReadlineError::Eof) => {

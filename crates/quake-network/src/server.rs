@@ -1,114 +1,124 @@
-use crate::connection::{Connection, ConnectionManager};
-use crate::dispatcher::{RequestDispatcher, RequestHandler};
-use crate::{
-    ACCEPT_CONNECTION_CONTROL_RESPONSE, CONNECTION_CONTROL_REQUEST, DISCONNECT_REQUEST,
-    PLAYER_INFO_CONTROL_REQUEST, RULE_INFO_CONTROL_REQUEST, SERVER_INFO_CONTROL_REQUEST,
-};
-use bytes::{BufMut, BytesMut};
-use parking_lot::RwLock;
-use std::net::ToSocketAddrs;
+use crate::{RequestDispatcher, RequestHandler};
+use rcgen::KeyPair;
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::log::{info, warn};
+use tracing::log::{error, info};
 
-struct ConnectionControlRequestHandler {
-    connection_manager: Arc<ConnectionManager>,
+pub struct ServerManager {
+    endpoint: quinn::Endpoint,
+    dispatcher: Arc<RequestDispatcher>,
 }
 
+impl ServerManager {
+    pub fn new(address: SocketAddr) -> anyhow::Result<Self> {
+        let cert = Self::cert()?;
+        let cert_der = quinn::rustls::pki_types::CertificateDer::from(cert.cert);
+        let cert_key =
+            quinn::rustls::pki_types::PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der())
+                .into();
+        let config = quinn::ServerConfig::with_single_cert(vec![cert_der], cert_key)?;
+        let endpoint = quinn::Endpoint::server(config, address)?;
+
+        let mut dispatcher = RequestDispatcher::default();
+        dispatcher.register_handler(0x01, Box::new(ConnectionControlRequestHandler));
+        dispatcher.register_handler(0x02, Box::new(ServerInfoControlRequestHandler));
+
+        Ok(Self {
+            endpoint,
+            dispatcher: Arc::new(dispatcher),
+        })
+    }
+
+    pub async fn accept(&self) {
+        while let Some(incoming) = self.endpoint.accept().await {
+            let dispatcher = self.dispatcher.clone();
+            tokio::spawn(async move {
+                match incoming.await {
+                    Ok(connection) => {
+                        info!("Incoming connection from {:?}", connection.remote_address());
+                        Self::handle_connection(connection, dispatcher).await;
+                    }
+                    Err(e) => error!("Error accepting connection: {}", e),
+                }
+            });
+        }
+    }
+
+    pub fn cert() -> anyhow::Result<rcgen::CertifiedKey<KeyPair>> {
+        let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+        Ok(rcgen::generate_simple_self_signed(subject_alt_names)?)
+    }
+
+    async fn handle_connection(connection: quinn::Connection, dispatcher: Arc<RequestDispatcher>) {
+        loop {
+            match connection.accept_bi().await {
+                Ok((tx, rx)) => {
+                    Self::handle_stream(tx, rx, &dispatcher).await;
+                }
+                Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
+                    info!("Connection closed");
+                    break;
+                }
+                Err(e) => {
+                    error!("Error accepting incoming bidirectional stream: {}", e);
+                    break;
+                }
+            }
+        }
+    }
+
+    async fn handle_stream(
+        mut tx: quinn::SendStream,
+        mut rx: quinn::RecvStream,
+        dispatcher: &Arc<RequestDispatcher>,
+    ) {
+        match rx.read_to_end(usize::MAX).await {
+            Ok(data) => {
+                if data.is_empty() {
+                    return;
+                }
+                match dispatcher.dispatch(&data) {
+                    Ok(response) => {
+                        if !response.is_empty() {
+                            if let Err(e) = tx.write_all(&response).await {
+                                error!("Error writing response: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Error handling request: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Error reading incoming stream: {}", e);
+            }
+        }
+    }
+}
+
+struct ConnectionControlRequestHandler;
+
 impl RequestHandler for ConnectionControlRequestHandler {
-    fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()> {
+    fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
         if data != b"QUAKE\x03" {
             return Err(anyhow::anyhow!("Invalid connection control request"));
         }
 
-        info!("Received connection control request from {}", from);
-
-        let connection_manager = self.connection_manager.clone();
-        let connection = Arc::new(Connection::new(connection_manager)?);
-        let local_addr = connection.local_addr()?;
-        self.connection_manager.add(local_addr, connection.clone());
-
-        let mut buf = BytesMut::new();
-        buf.put_u8(ACCEPT_CONNECTION_CONTROL_RESPONSE);
-        buf.put_u32(local_addr.port() as u32);
-        self.connection_manager.send_to(&buf, from)?;
-
-        info!("Connection established with {}", from);
-
-        connection.listen();
-
-        Ok(())
+        info!("Received connection control request");
+        Ok(vec![].into_boxed_slice())
     }
 }
 
 struct ServerInfoControlRequestHandler;
 
 impl RequestHandler for ServerInfoControlRequestHandler {
-    fn handle(&self, from: std::net::SocketAddr, data: &[u8]) -> anyhow::Result<()> {
+    fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
         if data != b"QUAKE\x03" {
             return Err(anyhow::anyhow!("Invalid server info control request"));
         }
 
-        info!("Received server info control request from {}", from);
-        Ok(())
-    }
-}
-
-pub struct ServerManager {
-    running: Arc<AtomicBool>,
-    connection_manager: Arc<ConnectionManager>,
-    request_dispatcher: Arc<RwLock<RequestDispatcher>>,
-}
-
-impl ServerManager {
-    pub fn new<A>(address: A) -> anyhow::Result<Self>
-    where
-        A: ToSocketAddrs,
-    {
-        let connection_manager = Arc::new(ConnectionManager::new(address)?);
-        let request_dispatcher = Arc::new(RwLock::new(RequestDispatcher::default()));
-        request_dispatcher.write().register_handler(
-            CONNECTION_CONTROL_REQUEST,
-            Box::new(ConnectionControlRequestHandler {
-                connection_manager: connection_manager.clone(),
-            }),
-        );
-        request_dispatcher.write().register_handler(
-            SERVER_INFO_CONTROL_REQUEST,
-            Box::new(ServerInfoControlRequestHandler),
-        );
-
-        Ok(Self {
-            running: Arc::new(AtomicBool::new(false)),
-            connection_manager,
-            request_dispatcher,
-        })
-    }
-
-    pub fn start(&self) -> anyhow::Result<()> {
-        info!(
-            "Listening on {:?} for UDP packets...",
-            self.connection_manager.local_addr()?
-        );
-
-        self.running.store(true, Ordering::Relaxed);
-        loop {
-            if !self.running.load(Ordering::Relaxed) {
-                break;
-            }
-            self.connection_manager
-                .accept(self.request_dispatcher.clone());
-        }
-        self.connection_manager.close();
-
-        Ok(())
-    }
-
-    pub fn stop(&self) {
-        self.running.store(false, Ordering::Relaxed);
-    }
-
-    pub fn connections_count(&self) -> usize {
-        self.connection_manager.count()
+        info!("Received server info control request");
+        Ok(vec![].into_boxed_slice())
     }
 }

@@ -1,5 +1,5 @@
-use parking_lot::RwLock;
 use std::collections::HashMap;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Default)]
 pub struct Bindings {
@@ -7,24 +7,22 @@ pub struct Bindings {
 }
 
 impl Bindings {
-    pub fn bind(&self, key: &str, command: &str) -> anyhow::Result<()> {
+    pub async fn bind(&self, key: &str, command: &str) {
         self.bindings
             .write()
+            .await
             .insert(key.to_string(), command.to_string());
-        Ok(())
     }
 
-    pub fn unbind(&self, key: &str) -> anyhow::Result<()> {
-        self.bindings.write().remove(key);
-        Ok(())
+    pub async fn unbind(&self, key: &str) {
+        self.bindings.write().await.remove(key);
     }
 
-    pub fn get(&self, key: &str) -> anyhow::Result<Option<String>> {
-        Ok(self.bindings.read().get(key).cloned())
+    pub async fn get(&self, key: &str) -> Option<String> {
+        self.bindings.read().await.get(key).cloned()
     }
 
-    pub fn clear(&self) -> anyhow::Result<()> {
-        self.bindings.write().clear();
-        Ok(())
+    pub async fn clear(&self) {
+        self.bindings.write().await.clear();
     }
 }

@@ -1,66 +1,84 @@
-use crate::{
-    ACCEPT_CONNECTION_CONTROL_RESPONSE, CONNECTION_CONTROL_REQUEST, DISCONNECT_REQUEST,
-    REJECT_CONNECTION_CONTROL_RESPONSE,
-};
-use bytes::{BufMut, BytesMut};
-use std::net::ToSocketAddrs;
+use crate::server::ServerManager;
+use quinn::VarInt;
+use std::sync::Arc;
 use tracing::log::info;
 
+pub struct BidirectionalStream {
+    send: quinn::SendStream,
+    recv: quinn::RecvStream,
+}
+
+impl BidirectionalStream {
+    pub async fn read(&mut self) -> anyhow::Result<Box<[u8]>> {
+        Ok(self.recv.read_to_end(usize::MAX).await?.into_boxed_slice())
+    }
+
+    pub async fn write(&mut self, data: &[u8]) -> anyhow::Result<()> {
+        self.send.write_all(data).await?;
+        Ok(())
+    }
+
+    pub fn finish(&mut self) -> anyhow::Result<()> {
+        self.send.finish()?;
+        Ok(())
+    }
+}
+
 pub struct ClientManager {
-    socket: std::net::UdpSocket,
+    endpoint: quinn::Endpoint,
+    connection: Option<quinn::Connection>,
 }
 
 impl ClientManager {
-    pub fn new() -> anyhow::Result<Self> {
+    pub async fn new() -> anyhow::Result<Self> {
+        let server_cert = ServerManager::cert()?;
+        let mut root_certs = rustls::RootCertStore::empty();
+        root_certs.add(rustls::pki_types::CertificateDer::from(server_cert.cert))?;
+        let config = quinn::ClientConfig::with_root_certificates(Arc::new(root_certs))?;
+
+        let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
+        endpoint.set_default_client_config(config);
+
         Ok(Self {
-            socket: std::net::UdpSocket::bind("0.0.0.0:0")?,
+            endpoint,
+            connection: None,
         })
     }
 
-    pub fn connect<A>(&self, address: A) -> anyhow::Result<()>
-    where
-        A: ToSocketAddrs,
-    {
-        self.socket.connect(address)?;
+    pub async fn connect(&mut self, address: std::net::SocketAddr) -> anyhow::Result<()> {
+        info!("Connecting to {:?}", address);
+        let connection = self.endpoint.connect(address, "localhost")?.await?;
+        self.connection = Some(connection);
 
-        // Capture the peer address before receiving data to modify it later
-        let mut remote_addr = self.socket.peer_addr()?;
+        Ok(())
+    }
 
-        let mut buf = BytesMut::new();
-        buf.put_u8(CONNECTION_CONTROL_REQUEST);
-        buf.put_slice(b"QUAKE");
-        buf.put_u8(3);
-        self.socket.send(&buf)?;
-
-        const BUFFER_SIZE: usize = 1024;
-        let mut buf = [0u8; BUFFER_SIZE];
-        let n = self.socket.recv(&mut buf)?;
-
-        let data = &buf[..n];
-        match data[0] {
-            ACCEPT_CONNECTION_CONTROL_RESPONSE => {
-                let port_bytes: [u8; 4] = data[1..5].try_into()?;
-                let remote_port = u32::from_be_bytes(port_bytes) as u16;
-
-                remote_addr.set_port(remote_port);
-                self.socket.connect(remote_addr)?;
-
-                info!("Connected to server at {}", remote_addr);
-
-                Ok(())
-            }
-            REJECT_CONNECTION_CONTROL_RESPONSE => {
-                Err(anyhow::anyhow!("Connection rejected by server"))
-            }
-            _ => Err(anyhow::anyhow!("Invalid connection control response")),
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        if let Some(connection) = self.connection.take() {
+            connection.close(VarInt::from_u32(0), b"disconnected");
+            self.endpoint.wait_idle().await;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Not connected"))
         }
     }
 
-    pub fn disconnect(&self) -> anyhow::Result<()> {
-        let mut buf = BytesMut::new();
-        buf.put_u8(DISCONNECT_REQUEST);
-        self.socket.send(&buf)?;
+    pub async fn reconnect(&mut self) -> anyhow::Result<()> {
+        let address = self
+            .connection
+            .as_ref()
+            .map(|conn| conn.remote_address())
+            .ok_or_else(|| anyhow::anyhow!("Not connected"))?;
 
-        Ok(())
+        self.disconnect().await?;
+        self.connect(address).await
+    }
+
+    pub async fn create_bidirectional_stream(&self) -> anyhow::Result<BidirectionalStream> {
+        let connection = self.connection.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Unable to create bidirectional stream: not connected")
+        })?;
+        let (send, recv) = connection.open_bi().await?;
+        Ok(BidirectionalStream { send, recv })
     }
 }

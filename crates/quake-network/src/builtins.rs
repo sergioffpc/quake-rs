@@ -1,83 +1,47 @@
 use crate::client::ClientManager;
-use crate::server::ServerManager;
 use quake_traits::ControlFlow;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct ClientBuiltins {
-    inner: Arc<ClientManager>,
+    client_manager: Arc<Mutex<ClientManager>>,
 }
 
 impl ClientBuiltins {
-    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["connect", "disconnect"];
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["connect", "disconnect", "reconnect"];
 
-    pub fn new(inner: Arc<ClientManager>) -> Self {
-        Self { inner }
+    pub fn new(client_manager: Arc<Mutex<ClientManager>>) -> Self {
+        Self { client_manager }
     }
 
-    pub fn builtin_connect(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        self.inner
-            .connect(Self::with_default_port(args[0], 26000))?;
+    async fn builtin_connect(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+        self.client_manager
+            .lock()
+            .await
+            .connect(args[0].parse()?)
+            .await?;
         Ok(ControlFlow::Poll)
     }
 
-    pub fn builtin_disconnect(&self) -> anyhow::Result<ControlFlow> {
-        self.inner.disconnect()?;
+    async fn builtin_disconnect(&mut self) -> anyhow::Result<ControlFlow> {
+        self.client_manager.lock().await.disconnect().await?;
         Ok(ControlFlow::Poll)
     }
 
-    fn with_default_port(addr: &str, default_port: u16) -> String {
-        if addr.contains(':') {
-            addr.to_string()
-        } else {
-            format!("{}:{}", addr, default_port)
-        }
+    async fn builtin_reconnect(&mut self) -> anyhow::Result<ControlFlow> {
+        self.client_manager.lock().await.reconnect().await?;
+        Ok(ControlFlow::Poll)
     }
 }
 
+#[async_trait::async_trait]
 impl quake_traits::CommandHandler for ClientBuiltins {
-    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
-            "connect" => self.builtin_connect(&command[1..]),
-            "disconnect" => self.builtin_disconnect(),
-            _ => Ok(ControlFlow::Poll),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ServerBuiltins {
-    inner: Arc<ServerManager>,
-}
-
-impl ServerBuiltins {
-    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["status"];
-
-    pub fn new(inner: Arc<ServerManager>) -> Self {
-        Self { inner }
-    }
-
-    pub fn builtin_status(&mut self) -> anyhow::Result<ControlFlow> {
-        let hostname = hostname::get()
-            .map(|h| h.into_string().unwrap_or_else(|_| "unknown".to_string()))
-            .unwrap_or_else(|_| "unknown".to_string());
-
-        use std::io::Write;
-        writeln!(
-            std::io::stdout(),
-            "host: {}\nplayers: {}",
-            hostname,
-            self.inner.connections_count()
-        )?;
-
-        Ok(ControlFlow::Poll)
-    }
-}
-
-impl quake_traits::CommandHandler for ServerBuiltins {
-    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
-        match command[0] {
-            "status" => self.builtin_status(),
+            "connect" => self.builtin_connect(&command[1..]).await,
+            "disconnect" => self.builtin_disconnect().await,
+            "reconnect" => self.builtin_reconnect().await,
             _ => Ok(ControlFlow::Poll),
         }
     }

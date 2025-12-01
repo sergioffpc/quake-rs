@@ -17,7 +17,7 @@ impl ConsoleBuiltins {
         Self { inner, resources }
     }
 
-    fn builtin_alias(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn builtin_alias(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
         let alias = args[0];
         if args.len() > 1 {
             let s = args[1..].join(" ");
@@ -29,9 +29,14 @@ impl ConsoleBuiltins {
             self.inner
                 .command_aliases
                 .write()
+                .await
                 .register_alias(alias, &command_text);
         } else {
-            self.inner.command_aliases.write().unregister_alias(alias);
+            self.inner
+                .command_aliases
+                .write()
+                .await
+                .unregister_alias(alias);
         }
         Ok(ControlFlow::Poll)
     }
@@ -42,9 +47,9 @@ impl ConsoleBuiltins {
         Ok(ControlFlow::Poll)
     }
 
-    fn builtin_exec(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn builtin_exec(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
         if let Ok(text) = self.resources.by_name::<String>(args[0]) {
-            self.inner.command_buffer.lock().push_front(&text);
+            self.inner.command_buffer.lock().await.push_front(&text);
         }
         Ok(ControlFlow::Poll)
     }
@@ -69,12 +74,13 @@ impl ConsoleBuiltins {
     }
 }
 
+#[async_trait::async_trait]
 impl quake_traits::CommandHandler for ConsoleBuiltins {
-    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
-            "alias" => self.builtin_alias(&command[1..]),
+            "alias" => self.builtin_alias(&command[1..]).await,
             "echo" => self.builtin_echo(&command[1..]),
-            "exec" => self.builtin_exec(&command[1..]),
+            "exec" => self.builtin_exec(&command[1..]).await,
             "quit" => self.builtin_quit(),
             "wait" => self.builtin_wait(),
             "version" => self.builtin_version(),

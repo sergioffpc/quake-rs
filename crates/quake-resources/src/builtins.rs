@@ -20,8 +20,8 @@ impl ResourcesBuiltins {
         Ok(ControlFlow::Poll)
     }
 
-    pub fn builtin_flush(&self) -> anyhow::Result<ControlFlow> {
-        self.inner.flush()?;
+    pub async fn builtin_flush(&self) -> anyhow::Result<ControlFlow> {
+        self.inner.flush().await?;
         Ok(ControlFlow::Poll)
     }
 
@@ -33,11 +33,12 @@ impl ResourcesBuiltins {
     }
 }
 
+#[async_trait::async_trait]
 impl quake_traits::CommandHandler for ResourcesBuiltins {
-    fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "cat" => self.builtin_cat(&command[1..]),
-            "flush" => self.builtin_flush(),
+            "flush" => self.builtin_flush().await,
             "ls" => self.builtin_ls(),
             _ => Ok(ControlFlow::Poll),
         }

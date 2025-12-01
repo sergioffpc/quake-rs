@@ -1,16 +1,31 @@
+use std::collections::HashMap;
+
 pub mod builtins;
 pub mod client;
 pub mod server;
 
-mod connection;
-mod dem;
-mod dispatcher;
+pub trait RequestHandler: Send + Sync {
+    fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>>;
+}
 
-const CONNECTION_CONTROL_REQUEST: u8 = 0x01;
-const SERVER_INFO_CONTROL_REQUEST: u8 = 0x02;
-const PLAYER_INFO_CONTROL_REQUEST: u8 = 0x03;
-const RULE_INFO_CONTROL_REQUEST: u8 = 0x04;
-const ACCEPT_CONNECTION_CONTROL_RESPONSE: u8 = 0x81;
-const REJECT_CONNECTION_CONTROL_RESPONSE: u8 = 0x82;
+#[derive(Default)]
+pub struct RequestDispatcher {
+    handlers: HashMap<u8, Box<dyn RequestHandler>>,
+}
 
-const DISCONNECT_REQUEST: u8 = 0x02;
+impl RequestDispatcher {
+    pub fn dispatch(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        match self.handlers.get(&data[0]) {
+            Some(handler) => handler.handle(&data[1..]),
+            None => Err(anyhow::anyhow!("No handler for packet type {}", data[0])),
+        }
+    }
+
+    pub fn register_handler(&mut self, packet_type: u8, handler: Box<dyn RequestHandler>) {
+        self.handlers.insert(packet_type, handler);
+    }
+
+    pub fn unregister_handler(&mut self, packet_type: u8) {
+        self.handlers.remove(&packet_type);
+    }
+}

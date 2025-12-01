@@ -8,10 +8,10 @@ edition.workspace = true
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
-glam.workspace = true
-parking_lot.workspace = true
+async-trait.workspace = true
 tracing.workspace = true
 
-dashmap = "7.0.0-rc2"
-bytes = "1.11.0"
-hostname = "0.4.1"
+quinn = { version = "0.11.9", features = ["rustls-ring"] }
+rcgen = "0.14.5"
+tokio = "1.48.0"
+rustls = "0.23.35"

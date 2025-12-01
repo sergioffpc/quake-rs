@@ -1,9 +1,9 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
-use parking_lot::RwLock;
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 pub mod bsp;
 pub mod builtins;
@@ -45,11 +45,11 @@ impl Resources {
             .or_else(|_| self.pak.by_name(name))
     }
 
-    pub fn by_cached_name<T: quake_traits::FromBytes + 'static>(
+    pub async fn by_cached_name<T: quake_traits::FromBytes + 'static>(
         &self,
         name: &str,
     ) -> anyhow::Result<Arc<T>> {
-        if let Some(cached_data) = self.cache.read().get(name) {
+        if let Some(cached_data) = self.cache.read().await.get(name) {
             let typed_data = cached_data
                 .clone()
                 .downcast::<T>()
@@ -59,13 +59,17 @@ impl Resources {
 
         let data = Arc::new(self.by_name::<T>(name)?);
 
-        self.cache.write().insert(name.to_owned(), data.clone());
+        self.cache
+            .write()
+            .await
+            .insert(name.to_owned(), data.clone());
         Ok(data)
     }
 
-    pub fn cached_names(&self) -> impl Iterator<Item = String> {
+    pub async fn cached_names(&self) -> impl Iterator<Item = String> {
         self.cache
             .read()
+            .await
             .keys()
             .cloned()
             .collect::<Vec<_>>()
@@ -96,8 +100,8 @@ impl Resources {
         base_files.into_iter().chain(self.pak.file_names()).sorted()
     }
 
-    pub fn flush(&self) -> anyhow::Result<()> {
-        self.cache.write().clear();
+    pub async fn flush(&self) -> anyhow::Result<()> {
+        self.cache.write().await.clear();
         Ok(())
     }
 
