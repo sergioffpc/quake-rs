@@ -3,12 +3,12 @@ use quake_traits::ControlFlow;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct AudioBuiltins {
+pub struct AudioCommands {
     inner: Arc<AudioManager>,
     resources: Arc<quake_resources::Resources>,
 }
 
-impl AudioBuiltins {
+impl AudioCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] = &["play", "cd", "soundlist"];
 
     pub fn new(inner: Arc<AudioManager>, resources: Arc<quake_resources::Resources>) -> Self {
@@ -75,7 +75,7 @@ impl AudioBuiltins {
 }
 
 #[async_trait::async_trait]
-impl quake_traits::CommandHandler for AudioBuiltins {
+impl quake_traits::CommandHandler for AudioCommands {
     async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "play" => self.builtin_play(&command[1..]).await,

@@ -46,24 +46,24 @@ impl App {
         let resources = Arc::new(quake_resources::Resources::new(path)?);
         let console = Arc::new(quake_console::Console::default());
 
-        let resources_builtins =
-            quake_resources::builtins::ResourcesBuiltins::new(resources.clone());
+        let resources_commands =
+            quake_resources::commands::ResourcesCommands::new(resources.clone());
         runtime.block_on(async {
             console
                 .register_commands_handler(
-                    quake_resources::builtins::ResourcesBuiltins::BUILTIN_COMMANDS,
-                    resources_builtins.clone(),
+                    quake_resources::commands::ResourcesCommands::BUILTIN_COMMANDS,
+                    resources_commands.clone(),
                 )
                 .await
                 .unwrap();
         });
-        let console_builtins =
-            quake_console::builtins::ConsoleBuiltins::new(console.clone(), resources.clone());
+        let console_commands =
+            quake_console::commands::ConsoleCommands::new(console.clone(), resources.clone());
         runtime.block_on(async {
             console
                 .register_commands_handler(
-                    quake_console::builtins::ConsoleBuiltins::BUILTIN_COMMANDS,
-                    console_builtins.clone(),
+                    quake_console::commands::ConsoleCommands::BUILTIN_COMMANDS,
+                    console_commands.clone(),
                 )
                 .await
                 .unwrap();

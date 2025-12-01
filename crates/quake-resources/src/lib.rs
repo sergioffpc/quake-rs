@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub mod bsp;
-pub mod builtins;
+pub mod commands;
 pub mod mdl;
 
 mod pak;

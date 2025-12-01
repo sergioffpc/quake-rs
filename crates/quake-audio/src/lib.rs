@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use tokio::sync::Mutex;
 
-pub mod builtins;
+pub mod commands;
 
 pub struct AudioManager {
     manager: Mutex<kira::AudioManager>,

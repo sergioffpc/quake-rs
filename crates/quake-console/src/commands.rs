@@ -4,12 +4,12 @@ use quake_traits::ControlFlow;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct ConsoleBuiltins {
+pub struct ConsoleCommands {
     inner: Arc<Console>,
     resources: Arc<Resources>,
 }
 
-impl ConsoleBuiltins {
+impl ConsoleCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] =
         &["alias", "echo", "exec", "quit", "wait", "version"];
 
@@ -75,7 +75,7 @@ impl ConsoleBuiltins {
 }
 
 #[async_trait::async_trait]
-impl quake_traits::CommandHandler for ConsoleBuiltins {
+impl quake_traits::CommandHandler for ConsoleCommands {
     async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "alias" => self.builtin_alias(&command[1..]).await,

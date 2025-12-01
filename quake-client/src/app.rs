@@ -46,33 +46,33 @@ impl quake_window::WindowHandler for App {}
 
 impl quake_window::WindowLifecycleHandler for App {
     fn on_created(&mut self, window: quake_window::window::WindowHandle) -> anyhow::Result<()> {
-        let resources_builtins =
-            quake_resources::builtins::ResourcesBuiltins::new(self.resources.clone());
+        let resources_commands =
+            quake_resources::commands::ResourcesCommands::new(self.resources.clone());
         self.runtime
             .block_on(self.console.register_commands_handler(
-                quake_resources::builtins::ResourcesBuiltins::BUILTIN_COMMANDS,
-                resources_builtins,
+                quake_resources::commands::ResourcesCommands::BUILTIN_COMMANDS,
+                resources_commands,
             ))?;
 
-        let console_builtins = quake_console::builtins::ConsoleBuiltins::new(
+        let console_commands = quake_console::commands::ConsoleCommands::new(
             self.console.clone(),
             self.resources.clone(),
         );
         self.runtime
             .block_on(self.console.register_commands_handler(
-                quake_console::builtins::ConsoleBuiltins::BUILTIN_COMMANDS,
-                console_builtins,
+                quake_console::commands::ConsoleCommands::BUILTIN_COMMANDS,
+                console_commands,
             ))?;
 
         let audio_manager = Arc::new(quake_audio::AudioManager::new()?);
-        let audio_manager_builtins = quake_audio::builtins::AudioBuiltins::new(
+        let audio_manager_commands = quake_audio::commands::AudioCommands::new(
             audio_manager.clone(),
             self.resources.clone(),
         );
         self.runtime
             .block_on(self.console.register_commands_handler(
-                quake_audio::builtins::AudioBuiltins::BUILTIN_COMMANDS,
-                audio_manager_builtins,
+                quake_audio::commands::AudioCommands::BUILTIN_COMMANDS,
+                audio_manager_commands,
             ))?;
         self.audio_manager = Some(audio_manager);
 
@@ -80,22 +80,22 @@ impl quake_window::WindowLifecycleHandler for App {
             self.runtime
                 .block_on(quake_network::client::ClientManager::new())?,
         ));
-        let client_manager_builtins =
-            quake_network::builtins::ClientBuiltins::new(client_manager.clone());
+        let client_manager_commands =
+            quake_network::commands::ClientCommands::new(client_manager.clone());
         self.runtime
             .block_on(self.console.register_commands_handler(
-                quake_network::builtins::ClientBuiltins::BUILTIN_COMMANDS,
-                client_manager_builtins,
+                quake_network::commands::ClientCommands::BUILTIN_COMMANDS,
+                client_manager_commands,
             ))?;
         self.client_manager = Some(client_manager);
 
         let input_manager = Arc::new(quake_input::InputManager::default());
-        let input_manager_builtins =
-            quake_input::builtins::InputBuiltins::new(input_manager.clone());
+        let input_manager_commands =
+            quake_input::commands::InputCommands::new(input_manager.clone());
         self.runtime
             .block_on(self.console.register_commands_handler(
-                quake_input::builtins::InputBuiltins::BUILTIN_COMMANDS,
-                input_manager_builtins,
+                quake_input::commands::InputCommands::BUILTIN_COMMANDS,
+                input_manager_commands,
             ))?;
         self.input_manager = Some(input_manager);
 

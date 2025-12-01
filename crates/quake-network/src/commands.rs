@@ -4,11 +4,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
-pub struct ClientBuiltins {
+pub struct ClientCommands {
     client_manager: Arc<Mutex<ClientManager>>,
 }
 
-impl ClientBuiltins {
+impl ClientCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] = &["connect", "disconnect", "reconnect"];
 
     pub fn new(client_manager: Arc<Mutex<ClientManager>>) -> Self {
@@ -36,7 +36,7 @@ impl ClientBuiltins {
 }
 
 #[async_trait::async_trait]
-impl quake_traits::CommandHandler for ClientBuiltins {
+impl quake_traits::CommandHandler for ClientCommands {
     async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "connect" => self.builtin_connect(&command[1..]).await,

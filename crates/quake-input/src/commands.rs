@@ -3,11 +3,11 @@ use quake_traits::ControlFlow;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct InputBuiltins {
+pub struct InputCommands {
     inner: Arc<InputManager>,
 }
 
-impl InputBuiltins {
+impl InputCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] = &["bind", "unbind", "unbindall"];
 
     pub fn new(inner: Arc<InputManager>) -> Self {
@@ -42,7 +42,7 @@ impl InputBuiltins {
 }
 
 #[async_trait::async_trait]
-impl quake_traits::CommandHandler for InputBuiltins {
+impl quake_traits::CommandHandler for InputCommands {
     async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "bind" => self.builtin_bind(&command[1..]).await,

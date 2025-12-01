@@ -1,4 +1,4 @@
-pub mod builtins;
+pub mod commands;
 
 mod bindings;
 mod mapping;

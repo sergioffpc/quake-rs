@@ -3,8 +3,8 @@ use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
 use tokio::sync::{Mutex, RwLock};
 
-pub mod builtins;
 pub mod command;
+pub mod commands;
 
 #[derive(Default)]
 pub struct Console {

@@ -3,11 +3,11 @@ use quake_traits::ControlFlow;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct ResourcesBuiltins {
+pub struct ResourcesCommands {
     inner: Arc<Resources>,
 }
 
-impl ResourcesBuiltins {
+impl ResourcesCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] = &["cat", "flush", "ls"];
 
     pub fn new(inner: Arc<Resources>) -> Self {
@@ -34,7 +34,7 @@ impl ResourcesBuiltins {
 }
 
 #[async_trait::async_trait]
-impl quake_traits::CommandHandler for ResourcesBuiltins {
+impl quake_traits::CommandHandler for ResourcesCommands {
     async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
             "cat" => self.builtin_cat(&command[1..]),

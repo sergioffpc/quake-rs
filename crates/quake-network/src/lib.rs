@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-pub mod builtins;
 pub mod client;
+pub mod commands;
 pub mod server;
 
 pub trait RequestHandler: Send + Sync {
