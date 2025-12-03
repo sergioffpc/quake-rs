@@ -1,7 +1,10 @@
-use crate::{RequestDispatcher, RequestHandler};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use crate::requests::{
+    ConnectionControlRequestHandler, RequestDispatcher, ServerInfoControlRequestHandler,
+};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tracing::instrument;
 use tracing::log::{error, info};
 
 pub struct ServerManager {
@@ -46,6 +49,7 @@ impl ServerManager {
         }
     }
 
+    #[instrument(skip_all, fields(remote_addr = %connection.remote_address()))]
     async fn handle_connection(connection: quinn::Connection, dispatcher: Arc<RequestDispatcher>) {
         loop {
             match connection.accept_bi().await {
@@ -126,31 +130,5 @@ impl ServerManager {
             quinn::rustls::pki_types::CertificateDer::from(cert_der),
             quinn::rustls::pki_types::PrivateKeyDer::from(key_der),
         ))
-    }
-}
-
-struct ConnectionControlRequestHandler;
-
-impl RequestHandler for ConnectionControlRequestHandler {
-    fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        if data != b"QUAKE\x03" {
-            return Err(anyhow::anyhow!("Invalid connection control request"));
-        }
-
-        info!("Received connection control request");
-        Ok(vec![].into_boxed_slice())
-    }
-}
-
-struct ServerInfoControlRequestHandler;
-
-impl RequestHandler for ServerInfoControlRequestHandler {
-    fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        if data != b"QUAKE\x03" {
-            return Err(anyhow::anyhow!("Invalid server info control request"));
-        }
-
-        info!("Received server info control request");
-        Ok(vec![].into_boxed_slice())
     }
 }

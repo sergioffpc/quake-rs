@@ -1,5 +1,7 @@
+use quinn::ReadToEndError;
 use std::fs;
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 use tracing::log::info;
 
 pub struct BidirectionalStream {
@@ -13,13 +15,11 @@ impl BidirectionalStream {
     }
 
     pub async fn write(&mut self, data: &[u8]) -> anyhow::Result<()> {
-        self.send.write_all(data).await?;
-        Ok(())
+        self.send.write_all(data).await.map_err(Into::into)
     }
 
     pub fn finish(&mut self) -> anyhow::Result<()> {
-        self.send.finish()?;
-        Ok(())
+        self.send.finish().map_err(Into::into)
     }
 }
 
@@ -59,6 +59,15 @@ impl ClientManager {
 
         info!("Connected to {:?}", address);
 
+        let (mut tx, mut rx) = self.open_stream().await?;
+        tx.write(b"\x01QUAKE\x03").await?;
+        tx.finish()?;
+
+        match rx.read_to_end(usize::MAX).await?.as_slice() {
+            b"\x81" => info!("Connection control accepted"),
+            _ => unreachable!("Invalid connection control response"),
+        }
+
         Ok(())
     }
 
@@ -78,16 +87,14 @@ impl ClientManager {
             .as_ref()
             .map(|conn| conn.remote_address())
             .ok_or_else(|| anyhow::anyhow!("Not connected"))?;
-
         self.disconnect().await?;
         self.connect(address).await
     }
 
-    pub async fn create_bidirectional_stream(&self) -> anyhow::Result<BidirectionalStream> {
+    pub async fn open_stream(&self) -> anyhow::Result<(quinn::SendStream, quinn::RecvStream)> {
         let connection = self.connection.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Unable to create bidirectional stream: not connected")
         })?;
-        let (send, recv) = connection.open_bi().await?;
-        Ok(BidirectionalStream { send, recv })
+        Ok(connection.open_bi().await?)
     }
 }
