@@ -2,7 +2,7 @@ use quinn::ReadToEndError;
 use std::fs;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
-use tracing::log::info;
+use tracing::log::{error, info};
 
 pub struct BidirectionalStream {
     send: quinn::SendStream,
@@ -54,17 +54,21 @@ impl ClientManager {
     }
 
     pub async fn connect(&mut self, address: std::net::SocketAddr) -> anyhow::Result<()> {
+        info!("Connecting to {:?}", address);
         let connection = self.endpoint.connect(address, "localhost")?.await?;
         self.connection = Some(connection);
-
-        info!("Connected to {:?}", address);
 
         let (mut tx, mut rx) = self.open_stream().await?;
         tx.write(b"\x01QUAKE\x03").await?;
         tx.finish()?;
 
         match rx.read_to_end(usize::MAX).await?.as_slice() {
-            b"\x81" => info!("Connection control accepted"),
+            b"\x81" => {
+                info!("Connection control accepted");
+                tokio::spawn(Self::message_listener(
+                    self.connection.as_ref().unwrap().clone(),
+                ));
+            }
             _ => unreachable!("Invalid connection control response"),
         }
 
@@ -96,5 +100,26 @@ impl ClientManager {
             anyhow::anyhow!("Unable to create bidirectional stream: not connected")
         })?;
         Ok(connection.open_bi().await?)
+    }
+
+    async fn message_listener(connection: quinn::Connection) {
+        info!("Start listening for messages from server");
+        loop {
+            match connection.accept_uni().await {
+                Ok(mut recv) => match recv.read_to_end(usize::MAX).await {
+                    Ok(data) => {
+                        info!("Server message: {:?}", String::from_utf8_lossy(&data));
+                    }
+                    Err(e) => {
+                        error!("Error reading: {}", e);
+                        break;
+                    }
+                },
+                Err(e) => {
+                    error!("Connection closed: {}", e);
+                    break;
+                }
+            }
+        }
     }
 }

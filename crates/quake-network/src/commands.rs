@@ -73,6 +73,9 @@ impl ServerCommands {
     }
 
     async fn builtin_say(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+        self.server_manager
+            .broadcast(args.join(" ").into_bytes())
+            .await?;
         Ok(ControlFlow::Poll)
     }
 }

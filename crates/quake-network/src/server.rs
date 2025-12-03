@@ -4,12 +4,14 @@ use crate::requests::{
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tracing::instrument;
-use tracing::log::{error, info};
+use tracing::log::{error, info, warn};
 
 pub struct ServerManager {
     endpoint: quinn::Endpoint,
     dispatcher: Arc<RequestDispatcher>,
+    broadcast_tx: broadcast::Sender<Vec<u8>>,
 }
 
 impl ServerManager {
@@ -28,20 +30,25 @@ impl ServerManager {
         dispatcher.register_handler(0x01, Box::new(ConnectionControlRequestHandler));
         dispatcher.register_handler(0x02, Box::new(ServerInfoControlRequestHandler));
 
+        let (broadcast_tx, _) = broadcast::channel(512);
+
         Ok(Self {
             endpoint,
             dispatcher: Arc::new(dispatcher),
+            broadcast_tx,
         })
     }
 
     pub async fn accept(&self) {
         while let Some(incoming) = self.endpoint.accept().await {
             let dispatcher = self.dispatcher.clone();
+            let broadcast_tx = self.broadcast_tx.clone();
+
             tokio::spawn(async move {
                 match incoming.await {
                     Ok(connection) => {
                         info!("Incoming connection from {:?}", connection.remote_address());
-                        Self::handle_connection(connection, dispatcher).await;
+                        Self::handle_connection(connection, dispatcher, broadcast_tx).await;
                     }
                     Err(e) => error!("Error accepting connection: {}", e),
                 }
@@ -49,20 +56,54 @@ impl ServerManager {
         }
     }
 
+    pub async fn broadcast(&self, message: Vec<u8>) -> anyhow::Result<()> {
+        self.broadcast_tx.send(message)?;
+        Ok(())
+    }
+
     #[instrument(skip_all, fields(remote_addr = %connection.remote_address()))]
-    async fn handle_connection(connection: quinn::Connection, dispatcher: Arc<RequestDispatcher>) {
+    async fn handle_connection(
+        connection: quinn::Connection,
+        dispatcher: Arc<RequestDispatcher>,
+        broadcast_tx: broadcast::Sender<Vec<u8>>,
+    ) {
+        let mut broadcast_rx = broadcast_tx.subscribe();
+
         loop {
-            match connection.accept_bi().await {
-                Ok((tx, rx)) => {
-                    Self::handle_stream(tx, rx, &dispatcher).await;
+            tokio::select! {
+                // Handle incoming streams
+                result = connection.accept_bi() => {
+                    match result {
+                        Ok((tx, rx)) => {
+                            Self::handle_stream(tx, rx, &dispatcher).await;
+                        }
+                        Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
+                            info!("Connection closed");
+                            break;
+                        }
+                        Err(e) => {
+                            error!("Error accepting incoming bidirectional stream: {}", e);
+                            break;
+                        }
+                    }
                 }
-                Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
-                    info!("Connection closed");
-                    break;
-                }
-                Err(e) => {
-                    error!("Error accepting incoming bidirectional stream: {}", e);
-                    break;
+
+                // Listen for broadcast messages
+                result = broadcast_rx.recv() => {
+                    match result {
+                        Ok(message) => {
+                            if let Ok(mut tx) = connection.open_uni().await {
+                                if let Err(e) = tx.write_all(&message).await {
+                                    error!("Failed to send broadcast: {}", e);
+                                }
+                                let _ = tx.finish();
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            warn!("Broadcast channel lagged");
+                        }
+                        Err(_) => break,
+                    }
                 }
             }
         }
