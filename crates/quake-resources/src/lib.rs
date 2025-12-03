@@ -1,8 +1,9 @@
-use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
 use std::any::Any;
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
+use tokio::io::AsyncReadExt;
 use tokio::sync::RwLock;
 
 pub mod bsp;
@@ -19,7 +20,7 @@ pub struct Resources {
 }
 
 impl Resources {
-    pub fn new<P>(path: P) -> anyhow::Result<Self>
+    pub async fn new<P>(path: P) -> anyhow::Result<Self>
     where
         P: AsRef<std::path::Path>,
     {
@@ -30,7 +31,7 @@ impl Resources {
         }
 
         let base_path = path.as_ref().to_owned().canonicalize()?;
-        let pak = pak::Pak::new(path.as_ref())?;
+        let pak = pak::Pak::new(path.as_ref()).await?;
 
         Ok(Self {
             base_path,
@@ -39,10 +40,12 @@ impl Resources {
         })
     }
 
-    pub fn by_name<T: quake_traits::FromBytes>(&self, name: &str) -> anyhow::Result<T> {
+    pub async fn by_name<T: quake_traits::FromBytes>(&self, name: &str) -> anyhow::Result<T> {
         // Try loading from filesystem first, then fall back to PAK archives
-        self.load_from_filesystem(name)
-            .or_else(|_| self.pak.by_name(name))
+        match self.load_from_filesystem(name).await {
+            Ok(result) => Ok(result),
+            Err(_) => self.pak.by_name(name).await,
+        }
     }
 
     pub async fn by_cached_name<T: quake_traits::FromBytes + 'static>(
@@ -57,7 +60,7 @@ impl Resources {
             return Ok(typed_data);
         }
 
-        let data = Arc::new(self.by_name::<T>(name)?);
+        let data = Arc::new(self.by_name::<T>(name).await?);
 
         self.cache
             .write()
@@ -105,7 +108,10 @@ impl Resources {
         Ok(())
     }
 
-    fn load_from_filesystem<T: quake_traits::FromBytes>(&self, name: &str) -> anyhow::Result<T> {
+    async fn load_from_filesystem<T: quake_traits::FromBytes>(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<T> {
         let path = self
             .base_path
             .join(name)
@@ -113,7 +119,7 @@ impl Resources {
             .map_err(|_| anyhow::anyhow!("File not found in filesystem: {}", name))?;
 
         let bytes = std::fs::read(path)?;
-        T::from_bytes(&bytes)
+        T::from_bytes(&bytes).await
     }
 }
 
@@ -124,15 +130,17 @@ pub enum BoundingVolume {
 }
 
 impl BoundingVolume {
-    pub fn read_bounding_sphere_at_origin_with<R, F>(
+    pub async fn read_bounding_sphere_at_origin_with<R, F>(
         reader: &mut R,
-        read_vector_fn: F,
+        mut read_vector_fn: F,
     ) -> anyhow::Result<Self>
     where
-        R: std::io::Read,
-        F: Fn(&mut R) -> anyhow::Result<f32>,
+        R: AsyncReadExt + Unpin + Send,
+        F: for<'r> FnMut(
+            &'r mut R,
+        ) -> Pin<Box<dyn Future<Output = anyhow::Result<f32>> + Send + 'r>>,
     {
-        let radius = read_vector_fn(reader)?;
+        let radius = read_vector_fn(reader).await?;
 
         Ok(Self::Sphere {
             center: glam::Vec3::ZERO,
@@ -140,13 +148,19 @@ impl BoundingVolume {
         })
     }
 
-    pub fn read_bounding_box_with<R, F>(reader: &mut R, read_vector_fn: F) -> anyhow::Result<Self>
+    pub async fn read_bounding_box_with<R, F>(
+        reader: &mut R,
+        mut read_vector_fn: F,
+    ) -> anyhow::Result<Self>
     where
-        R: std::io::Read,
-        F: Fn(&mut R) -> anyhow::Result<glam::Vec3>,
+        R: AsyncReadExt + Unpin + Send,
+        F: for<'r> FnMut(
+            &'r mut R,
+        )
+            -> Pin<Box<dyn Future<Output = anyhow::Result<glam::Vec3>> + Send + 'r>>,
     {
-        let min = read_vector_fn(reader)?;
-        let max = read_vector_fn(reader)?;
+        let min = read_vector_fn(reader).await?;
+        let max = read_vector_fn(reader).await?;
 
         Ok(Self::Box { min, max })
     }
@@ -291,97 +305,109 @@ impl BoundingVolume {
     }
 }
 
-pub fn read_f32_bounding_sphere<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
+pub async fn read_f32_bounding_sphere<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
     BoundingVolume::read_bounding_sphere_at_origin_with(reader, |r| {
-        Ok(r.read_f32::<LittleEndian>()?)
+        Box::pin(async move { Ok(r.read_f32_le().await?) })
     })
+    .await
 }
 
-pub fn read_i16_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
+pub async fn read_i16_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
-    BoundingVolume::read_bounding_box_with(reader, |r| read_i16_vector3_as_f32(r))
+    BoundingVolume::read_bounding_box_with(reader, |r| {
+        Box::pin(async move { Ok(read_i16_vector3_as_f32(r).await?) })
+    })
+    .await
 }
 
-pub fn read_f32_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
+pub async fn read_f32_bounding_box<R>(reader: &mut R) -> anyhow::Result<BoundingVolume>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
-    BoundingVolume::read_bounding_box_with(reader, |r| read_f32_vector3(r))
+    BoundingVolume::read_bounding_box_with(reader, |r| {
+        Box::pin(async move { Ok(read_f32_vector3(r).await?) })
+    })
+    .await
 }
 
-pub fn read_scaled_position_bounding_box<R>(
+pub async fn read_scaled_position_bounding_box<R>(
     reader: &mut R,
     scale: glam::Vec3,
     translate: glam::Vec3,
 ) -> anyhow::Result<BoundingVolume>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
     BoundingVolume::read_bounding_box_with(reader, |r| {
-        let point = read_scaled_position(r, scale, translate)?;
-        r.read_u8()? as f32;
-
-        Ok(point)
+        Box::pin(async move {
+            let point = read_scaled_position::<R>(r, scale, translate).await?;
+            r.read_u8().await? as f32;
+            Ok(point)
+        })
     })
+    .await
 }
 
-pub fn read_f32_vector3<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
+pub async fn read_f32_vector3<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
     let vector = [
-        reader.read_f32::<LittleEndian>()?,
-        reader.read_f32::<LittleEndian>()?,
-        reader.read_f32::<LittleEndian>()?,
+        reader.read_f32_le().await?,
+        reader.read_f32_le().await?,
+        reader.read_f32_le().await?,
     ];
 
     // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
     Ok([vector[0], vector[2], -vector[1]].into())
 }
 
-pub fn read_i16_vector3_as_f32<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
+pub async fn read_i16_vector3_as_f32<R>(reader: &mut R) -> anyhow::Result<glam::Vec3>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
     let vector = [
-        reader.read_i16::<LittleEndian>()? as f32,
-        reader.read_i16::<LittleEndian>()? as f32,
-        reader.read_i16::<LittleEndian>()? as f32,
+        reader.read_i16_le().await? as f32,
+        reader.read_i16_le().await? as f32,
+        reader.read_i16_le().await? as f32,
     ];
 
     // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
     Ok([vector[0], vector[2], -vector[1]].into())
 }
 
-pub fn read_scaled_position<R>(
+pub async fn read_scaled_position<R>(
     reader: &mut R,
     scale: glam::Vec3,
     translate: glam::Vec3,
 ) -> anyhow::Result<glam::Vec3>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
     let vector = [
-        reader.read_u8()? as f32 * scale[0] + translate[0],
-        reader.read_u8()? as f32 * scale[1] + translate[1],
-        reader.read_u8()? as f32 * scale[2] + translate[2],
+        reader.read_u8().await? as f32 * scale[0] + translate[0],
+        reader.read_u8().await? as f32 * scale[1] + translate[1],
+        reader.read_u8().await? as f32 * scale[2] + translate[2],
     ];
 
     // Swaps Y↔Z axes to convert from Quake's coordinate system to standard 3D
     Ok([vector[0], vector[2], -vector[1]].into())
 }
 
-pub fn read_null_terminated_string<R>(reader: &mut R, buffer_size: usize) -> anyhow::Result<String>
+pub async fn read_null_terminated_string<R>(
+    reader: &mut R,
+    buffer_size: usize,
+) -> anyhow::Result<String>
 where
-    R: std::io::Read,
+    R: AsyncReadExt + Unpin + Send,
 {
     let mut name_buffer = vec![0u8; buffer_size];
-    reader.read_exact(&mut name_buffer)?;
+    reader.read_exact(&mut name_buffer).await?;
     let null_terminated_bytes: Vec<u8> = name_buffer
         .iter()
         .take_while(|&byte| *byte != 0)

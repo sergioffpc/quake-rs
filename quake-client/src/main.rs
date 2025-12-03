@@ -14,6 +14,9 @@ struct Args {
     #[arg(long, default_value = "resources/", help = "Base path for resources")]
     base_path: PathBuf,
 
+    #[arg(long, default_value = "certs/ca.pem", help = "Path to CA certificate")]
+    ca_path: PathBuf,
+
     #[arg(long, default_value = "2048", help = "Window width")]
     width: u32,
 
@@ -22,6 +25,8 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())

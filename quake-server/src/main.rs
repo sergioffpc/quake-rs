@@ -14,6 +14,20 @@ struct Args {
     #[arg(long, default_value = "resources/", help = "Base path for resources")]
     base_path: PathBuf,
 
+    #[arg(
+        long,
+        default_value = "certs/cert.pem",
+        help = "Path to server certificate"
+    )]
+    cert_path: PathBuf,
+
+    #[arg(
+        long,
+        default_value = "certs/key.pem",
+        help = "Path to server private key"
+    )]
+    key_path: PathBuf,
+
     #[arg(long, default_value_t = false, help = "Run as a daemon")]
     daemon: bool,
 
@@ -26,6 +40,8 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::from_default_env())

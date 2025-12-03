@@ -48,7 +48,7 @@ impl ConsoleCommands {
     }
 
     async fn builtin_exec(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        if let Ok(text) = self.resources.by_name::<String>(args[0]) {
+        if let Ok(text) = self.resources.by_name::<String>(args[0]).await {
             self.inner.command_buffer.lock().await.push_front(&text);
         }
         Ok(ControlFlow::Poll)

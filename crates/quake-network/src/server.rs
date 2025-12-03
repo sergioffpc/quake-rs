@@ -1,5 +1,5 @@
 use crate::{RequestDispatcher, RequestHandler};
-use rcgen::KeyPair;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::log::{error, info};
@@ -10,14 +10,16 @@ pub struct ServerManager {
 }
 
 impl ServerManager {
-    pub fn new(address: SocketAddr) -> anyhow::Result<Self> {
-        let cert = Self::cert()?;
-        let cert_der = quinn::rustls::pki_types::CertificateDer::from(cert.cert);
-        let cert_key =
-            quinn::rustls::pki_types::PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der())
-                .into();
-        let config = quinn::ServerConfig::with_single_cert(vec![cert_der], cert_key)?;
-        let endpoint = quinn::Endpoint::server(config, address)?;
+    pub async fn new<P>(address: SocketAddr, cert_path: P, key_path: P) -> anyhow::Result<Self>
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let (cert_der, cert_key) = Self::load_cert(cert_path, key_path)?;
+        let mut server_config = quinn::ServerConfig::with_single_cert(vec![cert_der], cert_key)?;
+        server_config.transport = Arc::new(quinn::TransportConfig::default());
+
+        let endpoint = quinn::Endpoint::server(server_config, address)?;
+        info!("Listening on {}", endpoint.local_addr()?);
 
         let mut dispatcher = RequestDispatcher::default();
         dispatcher.register_handler(0x01, Box::new(ConnectionControlRequestHandler));
@@ -42,11 +44,6 @@ impl ServerManager {
                 }
             });
         }
-    }
-
-    pub fn cert() -> anyhow::Result<rcgen::CertifiedKey<KeyPair>> {
-        let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
-        Ok(rcgen::generate_simple_self_signed(subject_alt_names)?)
     }
 
     async fn handle_connection(connection: quinn::Connection, dispatcher: Arc<RequestDispatcher>) {
@@ -94,6 +91,41 @@ impl ServerManager {
                 error!("Error reading incoming stream: {}", e);
             }
         }
+    }
+
+    fn load_cert<P>(
+        cert_path: P,
+        key_path: P,
+    ) -> anyhow::Result<(CertificateDer<'static>, PrivateKeyDer<'static>)>
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let cert_pem = std::fs::read_to_string(cert_path.as_ref())
+            .map_err(|e| anyhow::anyhow!("Failed to read certificate: {}", e))?;
+        let key_pem = std::fs::read_to_string(key_path.as_ref())
+            .map_err(|e| anyhow::anyhow!("Failed to read key: {}", e))?;
+
+        let cert_der = rustls_pemfile::certs(&mut cert_pem.as_bytes())
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No certificate found in PEM"))?;
+
+        let key_der = rustls_pemfile::pkcs8_private_keys(&mut key_pem.as_bytes())
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No key found in PEM"))?;
+
+        info!(
+            "Loaded certificates from files: {}, {}",
+            cert_path.as_ref().display(),
+            key_path.as_ref().display()
+        );
+        Ok((
+            quinn::rustls::pki_types::CertificateDer::from(cert_der),
+            quinn::rustls::pki_types::PrivateKeyDer::from(key_der),
+        ))
     }
 }
 

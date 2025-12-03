@@ -9,9 +9,10 @@ quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
 async-trait.workspace = true
+rustls.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 
-quinn = { version = "0.11.9", features = ["rustls-ring"] }
+quinn = { version = "0.11.9", features = ["ring"] }
+rustls-pemfile = "2.2.0"
 rcgen = "0.14.5"
-tokio = "1.48.0"
-rustls = "0.23.35"

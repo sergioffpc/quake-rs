@@ -1,6 +1,5 @@
 use crate::Args;
 use std::fs::File;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::log::{error, info};
@@ -26,24 +25,29 @@ pub fn run_app(args: Args) -> anyhow::Result<()> {
         }
     }
 
-    let app = App::new(args.base_path)?;
-    app.start(args.listen.parse()?)
+    let app = App::new(args)?;
+    app.start()
 }
 
 struct App {
     runtime: tokio::runtime::Runtime,
     console: Arc<quake_console::Console>,
+
+    server_manager: Arc<quake_network::server::ServerManager>,
 }
 
 impl App {
-    fn new<P>(path: P) -> anyhow::Result<Self>
-    where
-        P: AsRef<std::path::Path>,
-    {
+    fn new(args: Args) -> anyhow::Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?;
-        let resources = Arc::new(quake_resources::Resources::new(path)?);
+        let resources = runtime.block_on(async {
+            Arc::new(
+                quake_resources::Resources::new(args.base_path)
+                    .await
+                    .unwrap(),
+            )
+        });
         let console = Arc::new(quake_console::Console::default());
 
         let resources_commands =
@@ -69,14 +73,30 @@ impl App {
                 .unwrap();
         });
 
-        Ok(Self { runtime, console })
+        let server_manager = runtime.block_on(async {
+            Arc::new(
+                quake_network::server::ServerManager::new(
+                    args.listen.parse().unwrap(),
+                    args.cert_path,
+                    args.key_path,
+                )
+                .await
+                .unwrap(),
+            )
+        });
+
+        Ok(Self {
+            runtime,
+            console,
+            server_manager,
+        })
     }
 
-    fn start(&self, address: SocketAddr) -> anyhow::Result<()> {
+    fn start(&self) -> anyhow::Result<()> {
         let handles = vec![
             self.spawn_tick_loop(),
             self.spawn_repl_loop(),
-            self.spawn_listen_loop(address)?,
+            self.spawn_accept_loop()?,
         ];
         self.runtime.block_on(async {
             for handle in handles {
@@ -102,8 +122,8 @@ impl App {
             .spawn(async move { console.repl().await.unwrap() })
     }
 
-    fn spawn_listen_loop(&self, address: SocketAddr) -> anyhow::Result<JoinHandle<()>> {
-        let server_manager = Arc::new(quake_network::server::ServerManager::new(address)?);
+    fn spawn_accept_loop(&self) -> anyhow::Result<JoinHandle<()>> {
+        let server_manager = self.server_manager.clone();
         let handle = self
             .runtime
             .spawn(async move { server_manager.accept().await });

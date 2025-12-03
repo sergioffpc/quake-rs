@@ -1,5 +1,4 @@
-use crate::server::ServerManager;
-use quinn::VarInt;
+use std::fs;
 use std::sync::Arc;
 use tracing::log::info;
 
@@ -30,10 +29,19 @@ pub struct ClientManager {
 }
 
 impl ClientManager {
-    pub async fn new() -> anyhow::Result<Self> {
-        let server_cert = ServerManager::cert()?;
+    pub async fn new<P>(ca_path: P) -> anyhow::Result<Self>
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let ca_pem = fs::read_to_string(ca_path.as_ref())?;
+
         let mut root_certs = rustls::RootCertStore::empty();
-        root_certs.add(rustls::pki_types::CertificateDer::from(server_cert.cert))?;
+        let certs = rustls_pemfile::certs(&mut ca_pem.as_bytes()).collect::<Result<Vec<_>, _>>()?;
+
+        for cert in certs {
+            root_certs.add(cert)?;
+        }
+
         let config = quinn::ClientConfig::with_root_certificates(Arc::new(root_certs))?;
 
         let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
@@ -46,16 +54,17 @@ impl ClientManager {
     }
 
     pub async fn connect(&mut self, address: std::net::SocketAddr) -> anyhow::Result<()> {
-        info!("Connecting to {:?}", address);
         let connection = self.endpoint.connect(address, "localhost")?.await?;
         self.connection = Some(connection);
+
+        info!("Connected to {:?}", address);
 
         Ok(())
     }
 
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         if let Some(connection) = self.connection.take() {
-            connection.close(VarInt::from_u32(0), b"disconnected");
+            connection.close(quinn::VarInt::from_u32(0), b"disconnected");
             self.endpoint.wait_idle().await;
             Ok(())
         } else {

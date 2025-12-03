@@ -1,15 +1,18 @@
+#[async_trait::async_trait]
 pub trait FromBytes: Sized + Sync + Send {
-    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self>;
+    async fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self>;
 }
 
+#[async_trait::async_trait]
 impl FromBytes for Vec<u8> {
-    fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
+    async fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
         Ok(data.to_vec())
     }
 }
 
+#[async_trait::async_trait]
 impl FromBytes for String {
-    fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
+    async fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
         Ok(String::from_utf8_lossy(data).to_string())
     }
 }

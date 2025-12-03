@@ -14,8 +14,8 @@ impl ResourcesCommands {
         Self { inner }
     }
 
-    pub fn builtin_cat(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        let contents = self.inner.by_name::<String>(args[0])?;
+    pub async fn builtin_cat(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+        let contents = self.inner.by_name::<String>(args[0]).await?;
         println!("{}", contents);
         Ok(ControlFlow::Poll)
     }
@@ -37,7 +37,7 @@ impl ResourcesCommands {
 impl quake_traits::CommandHandler for ResourcesCommands {
     async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
         match command[0] {
-            "cat" => self.builtin_cat(&command[1..]),
+            "cat" => self.builtin_cat(&command[1..]).await,
             "flush" => self.builtin_flush().await,
             "ls" => self.builtin_ls(),
             _ => Ok(ControlFlow::Poll),

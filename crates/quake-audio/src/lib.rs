@@ -70,8 +70,9 @@ struct Snd {
     data: kira::sound::static_sound::StaticSoundData,
 }
 
+#[async_trait::async_trait]
 impl quake_traits::FromBytes for Snd {
-    fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
+    async fn from_bytes(data: &[u8]) -> anyhow::Result<Self> {
         let data =
             kira::sound::static_sound::StaticSoundData::from_cursor(Cursor::new(data.to_vec()))?;
 

@@ -2,11 +2,13 @@ use crate::{
     BoundingVolume, read_f32_bounding_sphere, read_f32_vector3, read_null_terminated_string,
     read_scaled_position, read_scaled_position_bounding_box,
 };
-use byteorder::{LittleEndian, ReadBytesExt};
+use std::io::Cursor;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
+#[async_trait::async_trait]
 impl quake_traits::FromBytes for Mdl {
-    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-        Mdl::from_slice(bytes)
+    async fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        Mdl::from_slice(bytes).await
     }
 }
 
@@ -26,43 +28,42 @@ pub struct Mdl {
 }
 
 impl Mdl {
-    pub fn from_slice(data: &[u8]) -> anyhow::Result<Self> {
-        use std::io::Read;
-        let mut reader = std::io::Cursor::new(data);
+    pub async fn from_slice(data: &[u8]) -> anyhow::Result<Self> {
+        let mut reader = Cursor::new(data);
 
         let mut ident = [0u8; 4];
-        reader.read_exact(&mut ident)?;
+        reader.read_exact(&mut ident).await?;
         if ident != *b"IDPO" {
             return Err(anyhow::anyhow!("Invalid MDL file"));
         }
 
-        let version = reader.read_u32::<LittleEndian>()?;
+        let version = reader.read_u32_le().await?;
         if version != 6 {
             return Err(anyhow::anyhow!("Invalid MDL version"));
         }
 
-        let scale = read_f32_vector3(&mut reader)?;
-        let translate = read_f32_vector3(&mut reader)?;
-        let bounding_volume = read_f32_bounding_sphere(&mut reader)?;
+        let scale = read_f32_vector3(&mut reader).await?;
+        let translate = read_f32_vector3(&mut reader).await?;
+        let bounding_volume = read_f32_bounding_sphere(&mut reader).await?;
 
-        let eye_position = read_f32_vector3(&mut reader)?;
+        let eye_position = read_f32_vector3(&mut reader).await?;
 
-        let textures_count = reader.read_u32::<LittleEndian>()?;
-        let texture_width = reader.read_u32::<LittleEndian>()?;
-        let texture_height = reader.read_u32::<LittleEndian>()?;
+        let textures_count = reader.read_u32_le().await?;
+        let texture_width = reader.read_u32_le().await?;
+        let texture_height = reader.read_u32_le().await?;
 
-        let vertices_count = reader.read_u32::<LittleEndian>()?;
-        let triangles_count = reader.read_u32::<LittleEndian>()?;
-        let frames_count = reader.read_u32::<LittleEndian>()?;
+        let vertices_count = reader.read_u32_le().await?;
+        let triangles_count = reader.read_u32_le().await?;
+        let frames_count = reader.read_u32_le().await?;
 
-        let sync_type = SyncType::from_i32(reader.read_i32::<LittleEndian>()?);
-        let flags = Flags::from_i32(reader.read_i32::<LittleEndian>()?);
-        let _size = reader.read_u32::<LittleEndian>()?;
+        let sync_type = SyncType::from_i32(reader.read_i32_le().await?);
+        let flags = Flags::from_i32(reader.read_i32_le().await?);
+        let _size = reader.read_u32_le().await?;
 
         let textures =
-            Self::read_textures(&mut reader, textures_count, texture_width, texture_height)?;
-        let texture_coords = Self::read_texture_coords(&mut reader, vertices_count)?;
-        let triangles = Self::read_triangles(&mut reader, triangles_count)?;
+            Self::read_textures(&mut reader, textures_count, texture_width, texture_height).await?;
+        let texture_coords = Self::read_texture_coords(&mut reader, vertices_count).await?;
+        let triangles = Self::read_triangles(&mut reader, triangles_count).await?;
         let frames = Self::read_frames(
             &mut reader,
             frames_count,
@@ -70,7 +71,8 @@ impl Mdl {
             &triangles,
             scale,
             translate,
-        )?;
+        )
+        .await?;
 
         Ok(Self {
             bounding_volume,
@@ -87,54 +89,57 @@ impl Mdl {
         })
     }
 
-    fn read_textures<R>(
+    async fn read_textures<R>(
         reader: &mut R,
         textures_count: u32,
         texture_width: u32,
         texture_height: u32,
     ) -> anyhow::Result<Box<[Texture]>>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
         let mut textures = Vec::with_capacity(textures_count as usize);
         for _ in 0..textures_count {
-            let texture = Texture::from_reader(reader, texture_width, texture_height)?;
+            let texture = Texture::from_reader(reader, texture_width, texture_height).await?;
             textures.push(texture);
         }
 
         Ok(textures.into_boxed_slice())
     }
 
-    fn read_texture_coords<R>(
+    async fn read_texture_coords<R>(
         reader: &mut R,
         vertices_count: u32,
     ) -> anyhow::Result<Box<[TextureCoord]>>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
         let mut texture_coords = Vec::with_capacity(vertices_count as usize);
         for _ in 0..vertices_count {
-            let texture_coord = TextureCoord::from_reader(reader)?;
+            let texture_coord = TextureCoord::from_reader(reader).await?;
             texture_coords.push(texture_coord)
         }
 
         Ok(texture_coords.into_boxed_slice())
     }
 
-    fn read_triangles<R>(reader: &mut R, triangles_count: u32) -> anyhow::Result<Box<[Triangle]>>
+    async fn read_triangles<R>(
+        reader: &mut R,
+        triangles_count: u32,
+    ) -> anyhow::Result<Box<[Triangle]>>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
         let mut triangles = Vec::with_capacity(triangles_count as usize);
         for _ in 0..triangles_count {
-            let triangle = Triangle::from_reader(reader)?;
+            let triangle = Triangle::from_reader(reader).await?;
             triangles.push(triangle);
         }
 
         Ok(triangles.into_boxed_slice())
     }
 
-    fn read_frames<R>(
+    async fn read_frames<R>(
         reader: &mut R,
         frames_count: u32,
         vertices_count: u32,
@@ -143,11 +148,12 @@ impl Mdl {
         translate: glam::Vec3,
     ) -> anyhow::Result<Box<[Frame]>>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
         let mut frames = Vec::with_capacity(frames_count as usize);
         for _ in 0..frames_count {
-            let frame = Frame::from_reader(reader, vertices_count, triangles, scale, translate)?;
+            let frame =
+                Frame::from_reader(reader, vertices_count, triangles, scale, translate).await?;
             frames.push(frame);
         }
 
@@ -168,26 +174,22 @@ pub enum Texture {
 }
 
 impl Texture {
-    pub fn from_reader<R>(
+    pub async fn from_reader<R>(
         reader: &mut R,
         texture_width: u32,
         texture_height: u32,
     ) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
-        let texture_type = reader.read_u32::<LittleEndian>()?;
+        let texture_type = reader.read_u32_le().await?;
         let texture = match texture_type {
-            0 => Self::Single(TextureSingle::from_reader(
-                reader,
-                texture_width,
-                texture_height,
-            )?),
-            _ => Self::Group(TextureGroup::from_reader(
-                reader,
-                texture_width,
-                texture_height,
-            )?),
+            0 => Self::Single(
+                TextureSingle::from_reader(reader, texture_width, texture_height).await?,
+            ),
+            _ => {
+                Self::Group(TextureGroup::from_reader(reader, texture_width, texture_height).await?)
+            }
         };
         Ok(texture)
     }
@@ -201,16 +203,16 @@ pub struct TextureSingle {
 }
 
 impl TextureSingle {
-    pub fn from_reader<R>(
+    pub async fn from_reader<R>(
         reader: &mut R,
         texture_width: u32,
         texture_height: u32,
     ) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
         let mut texture = vec![0u8; texture_width as usize * texture_height as usize];
-        reader.read_exact(&mut texture)?;
+        reader.read_exact(&mut texture).await?;
 
         Ok(Self {
             width: texture_width,
@@ -223,28 +225,24 @@ impl TextureSingle {
 pub type TextureGroup = TimedGroup<TextureSingle>;
 
 impl TextureGroup {
-    pub fn from_reader<R>(
+    pub async fn from_reader<R>(
         reader: &mut R,
         texture_width: u32,
         texture_height: u32,
     ) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
-        let texture_count = reader.read_u32::<LittleEndian>()?;
+        let texture_count = reader.read_u32_le().await?;
 
         let mut times = Vec::with_capacity(texture_count as usize);
         for _ in 0..texture_count {
-            times.push(reader.read_f32::<LittleEndian>()?);
+            times.push(reader.read_f32_le().await?);
         }
 
         let mut textures = Vec::with_capacity(texture_count as usize);
         for _ in 0..texture_count {
-            textures.push(TextureSingle::from_reader(
-                reader,
-                texture_width,
-                texture_height,
-            )?);
+            textures.push(TextureSingle::from_reader(reader, texture_width, texture_height).await?);
         }
 
         Ok(Self {
@@ -262,13 +260,13 @@ pub struct TextureCoord {
 }
 
 impl TextureCoord {
-    pub fn from_reader<R>(reader: &mut R) -> anyhow::Result<Self>
+    pub async fn from_reader<R>(reader: &mut R) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
-        let on_seam = reader.read_u32::<LittleEndian>()? == 0x20;
-        let s = reader.read_u32::<LittleEndian>()?;
-        let t = reader.read_u32::<LittleEndian>()?;
+        let on_seam = reader.read_u32_le().await? == 0x20;
+        let s = reader.read_u32_le().await?;
+        let t = reader.read_u32_le().await?;
         Ok(Self { on_seam, s, t })
     }
 }
@@ -280,16 +278,16 @@ pub struct Triangle {
 }
 
 impl Triangle {
-    pub fn from_reader<R>(reader: &mut R) -> anyhow::Result<Self>
+    pub async fn from_reader<R>(reader: &mut R) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
-        let faces_front = reader.read_u32::<LittleEndian>()? == 1;
+        let faces_front = reader.read_u32_le().await? == 1;
 
         let indices = [
-            reader.read_u32::<LittleEndian>()?,
-            reader.read_u32::<LittleEndian>()?,
-            reader.read_u32::<LittleEndian>()?,
+            reader.read_u32_le().await?,
+            reader.read_u32_le().await?,
+            reader.read_u32_le().await?,
         ];
 
         // Reverses triangle winding to convert from right-handed to left-handed
@@ -309,7 +307,7 @@ pub enum Frame {
 }
 
 impl Frame {
-    pub fn from_reader<R>(
+    pub async fn from_reader<R>(
         reader: &mut R,
         vertices_count: u32,
         triangles: &[Triangle],
@@ -317,24 +315,18 @@ impl Frame {
         translate: glam::Vec3,
     ) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
-        let frame_type = reader.read_u32::<LittleEndian>()?;
+        let frame_type = reader.read_u32_le().await?;
         let frame = match frame_type {
-            0 => Frame::Single(FrameSingle::from_reader(
-                reader,
-                vertices_count,
-                triangles,
-                scale,
-                translate,
-            )?),
-            _ => Frame::Group(FrameGroup::from_reader(
-                reader,
-                vertices_count,
-                triangles,
-                scale,
-                translate,
-            )?),
+            0 => Frame::Single(
+                FrameSingle::from_reader(reader, vertices_count, triangles, scale, translate)
+                    .await?,
+            ),
+            _ => Frame::Group(
+                FrameGroup::from_reader(reader, vertices_count, triangles, scale, translate)
+                    .await?,
+            ),
         };
         Ok(frame)
     }
@@ -349,7 +341,7 @@ pub struct FrameSingle {
 }
 
 impl FrameSingle {
-    pub fn from_reader<R>(
+    pub async fn from_reader<R>(
         reader: &mut R,
         vertices_count: u32,
         triangles: &[Triangle],
@@ -357,17 +349,17 @@ impl FrameSingle {
         translate: glam::Vec3,
     ) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
         const FRAME_NAME_SIZE: usize = 0x10;
 
-        let bounding_volume = read_scaled_position_bounding_box(reader, scale, translate)?;
-        let name = read_null_terminated_string(reader, FRAME_NAME_SIZE)?;
+        let bounding_volume = read_scaled_position_bounding_box(reader, scale, translate).await?;
+        let name = read_null_terminated_string(reader, FRAME_NAME_SIZE).await?;
 
         let mut positions = Vec::with_capacity(vertices_count as usize);
         for _ in 0..vertices_count {
-            let position = read_scaled_position(reader, scale, translate)?;
-            let _normal_index = reader.read_u8()?;
+            let position = read_scaled_position(reader, scale, translate).await?;
+            let _normal_index = reader.read_u8().await?;
 
             positions.push(position);
         }
@@ -398,7 +390,7 @@ pub struct FrameGroup {
 }
 
 impl FrameGroup {
-    pub fn from_reader<R>(
+    pub async fn from_reader<R>(
         reader: &mut R,
         vertices_count: u32,
         triangles: &[Triangle],
@@ -406,26 +398,23 @@ impl FrameGroup {
         translate: glam::Vec3,
     ) -> anyhow::Result<Self>
     where
-        R: std::io::Read + std::io::Seek,
+        R: AsyncReadExt + AsyncSeekExt + Unpin + Send,
     {
-        let subframes_count = reader.read_u32::<LittleEndian>()?;
+        let subframes_count = reader.read_u32_le().await?;
 
-        let bounding_volume = read_scaled_position_bounding_box(reader, scale, translate)?;
+        let bounding_volume = read_scaled_position_bounding_box(reader, scale, translate).await?;
 
         let mut times = Vec::with_capacity(subframes_count as usize);
         for _ in 0..subframes_count {
-            times.push(reader.read_f32::<LittleEndian>()?);
+            times.push(reader.read_f32_le().await?);
         }
 
         let mut subframes = Vec::with_capacity(subframes_count as usize);
         for _ in 0..subframes_count {
-            subframes.push(FrameSingle::from_reader(
-                reader,
-                vertices_count,
-                triangles,
-                scale,
-                translate,
-            )?);
+            subframes.push(
+                FrameSingle::from_reader(reader, vertices_count, triangles, scale, translate)
+                    .await?,
+            );
         }
 
         Ok(FrameGroup {
