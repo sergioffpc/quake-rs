@@ -5,6 +5,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod app;
+mod packets;
+pub mod stream;
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]

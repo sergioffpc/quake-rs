@@ -5,8 +5,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-quake-console = { path = "../quake-console" }
-quake-entity = { path = "../quake-entity" }
+quake-resources = { path = "../quake-resources" }
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
@@ -17,4 +16,3 @@ tracing.workspace = true
 
 quinn = { version = "0.11.9", features = ["ring"] }
 rustls-pemfile = "2.2.0"
-dashmap = "7.0.0-rc2"

@@ -13,13 +13,13 @@ pub mod mdl;
 mod pak;
 mod wad;
 
-pub struct Resources {
+pub struct ResourcesManager {
     base_path: std::path::PathBuf,
     pak: pak::Pak,
     cache: RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>,
 }
 
-impl Resources {
+impl ResourcesManager {
     pub async fn new<P>(path: P) -> anyhow::Result<Self>
     where
         P: AsRef<std::path::Path>,

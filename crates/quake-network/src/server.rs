@@ -1,5 +1,4 @@
-use crate::packet::{ConnectionRequestHandler, ConsoleRequestHandler, PacketDispatcher};
-use crate::session::{Session, SessionManager};
+use crate::{StreamHandler, StreamHandlerBuilder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -10,9 +9,7 @@ use tracing::log::{error, info, warn};
 
 pub struct ServerManager {
     endpoint: quinn::Endpoint,
-    dispatcher: Arc<PacketDispatcher>,
-    broadcast_tx: broadcast::Sender<Vec<u8>>,
-    session_manager: Arc<SessionManager>,
+    broadcast_sender: broadcast::Sender<Vec<u8>>,
 }
 
 impl ServerManager {
@@ -31,27 +28,21 @@ impl ServerManager {
         let endpoint = quinn::Endpoint::server(server_config, address)?;
         info!("Listening on {}", endpoint.local_addr()?);
 
-        let mut dispatcher = PacketDispatcher::default();
-        dispatcher.register_handler(0x01, Box::new(ConnectionRequestHandler));
-        dispatcher.register_handler(0x04, Box::new(ConsoleRequestHandler));
-
-        let (broadcast_tx, _) = broadcast::channel(512);
-
-        let session_manager = Arc::new(SessionManager::default());
+        let (broadcast_sender, _) = broadcast::channel(512);
 
         Ok(Self {
             endpoint,
-            dispatcher: Arc::new(dispatcher),
-            broadcast_tx,
-            session_manager,
+            broadcast_sender,
         })
     }
 
-    pub async fn accept(&self) {
+    pub async fn accept<B>(&self, builder: B) -> anyhow::Result<()>
+    where
+        B: StreamHandlerBuilder,
+    {
         while let Some(incoming) = self.endpoint.accept().await {
-            let dispatcher = self.dispatcher.clone();
-            let broadcast_tx = self.broadcast_tx.clone();
-            let session_manager = self.session_manager.clone();
+            let broadcast_receiver = self.broadcast_sender.subscribe();
+            let stream_handler = builder.build().await?;
 
             tokio::spawn(async move {
                 match incoming.await {
@@ -59,37 +50,36 @@ impl ServerManager {
                         let remote_addr = connection.remote_address();
                         info!("Incoming connection from {}", remote_addr);
 
-                        let session = Session::new().await.unwrap();
-                        session_manager.insert(remote_addr, session);
-                        Self::handle_connection(connection, dispatcher, broadcast_tx).await;
-                        session_manager.remove(&remote_addr);
+                        Self::handle_connection(connection, broadcast_receiver, stream_handler)
+                            .await
+                            .unwrap();
                     }
                     Err(e) => error!("Error accepting connection: {}", e),
                 }
             });
         }
+
+        Ok(())
     }
 
     pub async fn broadcast(&self, message: Vec<u8>) -> anyhow::Result<()> {
-        self.broadcast_tx.send(message)?;
+        self.broadcast_sender.send(message)?;
         Ok(())
     }
 
     #[instrument(skip_all, fields(remote_addr = %connection.remote_address()))]
     async fn handle_connection(
         connection: quinn::Connection,
-        dispatcher: Arc<PacketDispatcher>,
-        broadcast_tx: broadcast::Sender<Vec<u8>>,
-    ) {
-        let mut broadcast_rx = broadcast_tx.subscribe();
-
+        mut broadcast_receiver: broadcast::Receiver<Vec<u8>>,
+        stream_handler: Box<dyn StreamHandler>,
+    ) -> anyhow::Result<()> {
         loop {
             tokio::select! {
                 // Handle incoming streams
                 result = connection.accept_bi() => {
                     match result {
-                        Ok((tx, rx)) => {
-                            Self::handle_stream(tx, rx, &dispatcher).await;
+                        Ok((mut sender, mut receiver)) => {
+                            stream_handler.handle_stream(&mut sender, &mut receiver).await;
                         }
                         Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
                             info!("Connection closed");
@@ -103,14 +93,14 @@ impl ServerManager {
                 }
 
                 // Listen for broadcast messages
-                result = broadcast_rx.recv() => {
+                result = broadcast_receiver.recv() => {
                     match result {
                         Ok(message) => {
-                            if let Ok(mut tx) = connection.open_uni().await {
-                                if let Err(e) = tx.write_all(&message).await {
+                            if let Ok(mut sender) = connection.open_uni().await {
+                                if let Err(e) = sender.write_all(&message).await {
                                     error!("Failed to send broadcast: {}", e);
                                 }
-                                let _ = tx.finish();
+                                let _ = sender.finish();
                             }
                         }
                         Err(broadcast::error::RecvError::Lagged(_)) => {
@@ -121,35 +111,8 @@ impl ServerManager {
                 }
             }
         }
-    }
 
-    async fn handle_stream(
-        mut tx: quinn::SendStream,
-        mut rx: quinn::RecvStream,
-        dispatcher: &Arc<PacketDispatcher>,
-    ) {
-        match rx.read_to_end(usize::MAX).await {
-            Ok(data) => {
-                if data.is_empty() {
-                    return;
-                }
-                match dispatcher.dispatch(&data) {
-                    Ok(response) => {
-                        if !response.is_empty() {
-                            if let Err(e) = tx.write_all(&response).await {
-                                error!("Error writing response: {}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error handling request: {}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                error!("Error reading incoming stream: {}", e);
-            }
-        }
+        Ok(())
     }
 
     fn load_cert<P>(

@@ -10,7 +10,9 @@ quake-network = { path = "../crates/quake-network" }
 quake-resources = { path = "../crates/quake-resources" }
 
 anyhow.workspace = true
+async-trait.workspace = true
 clap.workspace = true
+
 rustls.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -1,20 +1,20 @@
-use quake_traits::ControlFlow;
 use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
+use std::fmt::Write;
 use tokio::sync::{Mutex, RwLock};
 
 pub mod command;
 pub mod commands;
 
 #[derive(Default)]
-pub struct Console {
+pub struct ConsoleManager {
     command_buffer: Mutex<command::CommandBuffer>,
     command_aliases: RwLock<command::CommandAliases>,
     command_variables: RwLock<command::CommandVariables>,
     command_registry: RwLock<command::CommandRegistry>,
 }
 
-impl Console {
+impl ConsoleManager {
     pub async fn register_commands_handler<H>(
         &self,
         commands: &[&str],
@@ -43,7 +43,8 @@ impl Console {
         self.command_buffer.lock().await.push_back(text);
     }
 
-    pub async fn execute(&self) -> anyhow::Result<()> {
+    pub async fn execute(&self) -> anyhow::Result<String> {
+        let mut buffer = String::new();
         while let Some(command_line) = self.fetch_next_command().await {
             let (name, args) = self.parse_command_line(command_line.as_str());
 
@@ -61,16 +62,37 @@ impl Console {
                     )
                     .await?
                 {
-                    ControlFlow::Wait => break,
-                    ControlFlow::Poll => continue,
+                    (output, control_flow) => {
+                        if !output.is_empty() {
+                            writeln!(&mut buffer, "{}", String::from_utf8_lossy(output))?;
+                        }
+                        match control_flow {
+                            quake_traits::ControlFlow::Wait => break,
+                            quake_traits::ControlFlow::Poll => continue,
+                        }
+                    }
                 }
             }
 
-            let value = args.join(" ");
-            self.command_variables.write().await.set(name, &value);
+            if args.is_empty() {
+                self.command_variables
+                    .read()
+                    .await
+                    .get::<String>(name)
+                    .map(async |value| {
+                        writeln!(&mut buffer, "{}", value).unwrap();
+                    });
+            } else {
+                let value = args.join(" ");
+                self.command_variables.write().await.set(name, &value);
+            }
         }
 
-        Ok(())
+        Ok(buffer)
+    }
+
+    pub async fn cvar(&self, name: &str) -> Option<String> {
+        self.command_variables.read().await.get::<String>(name)
     }
 
     async fn fetch_next_command(&self) -> Option<String> {

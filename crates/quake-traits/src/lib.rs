@@ -19,7 +19,7 @@ impl FromBytes for String {
 
 #[async_trait::async_trait]
 pub trait CommandHandler: Send + Sync {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow>;
+    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<(&[u8], ControlFlow)>;
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]

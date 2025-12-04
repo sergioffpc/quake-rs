@@ -1,23 +1,28 @@
-use crate::Console;
-use quake_resources::Resources;
-use quake_traits::ControlFlow;
+use crate::ConsoleManager;
+use std::fmt::Write;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ConsoleCommands {
-    inner: Arc<Console>,
-    resources: Arc<Resources>,
+    console_manager: Arc<ConsoleManager>,
+    resources_manager: Arc<quake_resources::ResourcesManager>,
 }
 
 impl ConsoleCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] =
         &["alias", "echo", "exec", "quit", "wait", "version"];
 
-    pub fn new(inner: Arc<Console>, resources: Arc<Resources>) -> Self {
-        Self { inner, resources }
+    pub fn new(
+        console_manager: Arc<ConsoleManager>,
+        resources_manager: Arc<quake_resources::ResourcesManager>,
+    ) -> Self {
+        Self {
+            console_manager,
+            resources_manager,
+        }
     }
 
-    async fn builtin_alias(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn alias(&mut self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         let alias = args[0];
         if args.len() > 1 {
             let s = args[1..].join(" ");
@@ -26,65 +31,73 @@ impl ConsoleCommands {
                 .and_then(|s| s.strip_suffix('"'))
                 .unwrap_or(&s)
                 .replace(";", "\n");
-            self.inner
+            self.console_manager
                 .command_aliases
                 .write()
                 .await
                 .register_alias(alias, &command_text);
         } else {
-            self.inner
+            self.console_manager
                 .command_aliases
                 .write()
                 .await
                 .unregister_alias(alias);
         }
-        Ok(ControlFlow::Poll)
+        Ok((&[], quake_traits::ControlFlow::Poll))
     }
 
-    fn builtin_echo(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        use std::io::Write;
-        writeln!(std::io::stdout(), "{}", args.join(" "))?;
-        Ok(ControlFlow::Poll)
+    fn echo(&mut self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+        let mut buffer = String::new();
+        writeln!(&mut buffer, "{}", args.join(" "))?;
+        Ok((
+            Box::leak(buffer.into_bytes().into_boxed_slice()),
+            quake_traits::ControlFlow::Poll,
+        ))
     }
 
-    async fn builtin_exec(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        if let Ok(text) = self.resources.by_name::<String>(args[0]).await {
-            self.inner.command_buffer.lock().await.push_front(&text);
+    async fn exec(&mut self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+        if let Ok(text) = self.resources_manager.by_name::<String>(args[0]).await {
+            self.console_manager
+                .command_buffer
+                .lock()
+                .await
+                .push_front(&text);
         }
-        Ok(ControlFlow::Poll)
+        Ok((&[], quake_traits::ControlFlow::Poll))
     }
 
-    fn builtin_quit(&mut self) -> anyhow::Result<ControlFlow> {
+    fn quit(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         std::process::exit(0);
     }
 
-    fn builtin_wait(&mut self) -> anyhow::Result<ControlFlow> {
-        Ok(ControlFlow::Wait)
+    fn wait(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+        Ok((&[], quake_traits::ControlFlow::Wait))
     }
 
-    fn builtin_version(&mut self) -> anyhow::Result<ControlFlow> {
-        use std::io::Write;
-        writeln!(
-            std::io::stdout(),
-            "Quake Version: {}",
-            env!("CARGO_PKG_VERSION")
-        )?;
-
-        Ok(ControlFlow::Poll)
+    fn version(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+        let mut buffer = String::new();
+        writeln!(&mut buffer, "Quake Version: {}", env!("CARGO_PKG_VERSION"))?;
+        Ok((
+            Box::leak(buffer.into_bytes().into_boxed_slice()),
+            quake_traits::ControlFlow::Poll,
+        ))
     }
 }
 
 #[async_trait::async_trait]
 impl quake_traits::CommandHandler for ConsoleCommands {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn handle_command(
+        &mut self,
+        command: &[&str],
+    ) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         match command[0] {
-            "alias" => self.builtin_alias(&command[1..]).await,
-            "echo" => self.builtin_echo(&command[1..]),
-            "exec" => self.builtin_exec(&command[1..]).await,
-            "quit" => self.builtin_quit(),
-            "wait" => self.builtin_wait(),
-            "version" => self.builtin_version(),
-            _ => Ok(ControlFlow::Poll),
+            "alias" => self.alias(&command[1..]).await,
+            "echo" => self.echo(&command[1..]),
+            "exec" => self.exec(&command[1..]).await,
+            "quit" => self.quit(),
+            "wait" => self.wait(),
+            "version" => self.version(),
+            _ => Ok((&[], quake_traits::ControlFlow::Poll)),
         }
     }
 }

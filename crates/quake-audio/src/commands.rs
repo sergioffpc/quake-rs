@@ -1,34 +1,40 @@
 use crate::{AudioManager, Snd};
-use quake_traits::ControlFlow;
+use std::fmt::Write;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AudioCommands {
-    inner: Arc<AudioManager>,
-    resources: Arc<quake_resources::Resources>,
+    audio_manager: Arc<AudioManager>,
+    resources_manager: Arc<quake_resources::ResourcesManager>,
 }
 
 impl AudioCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] = &["play", "cd", "soundlist"];
 
-    pub fn new(inner: Arc<AudioManager>, resources: Arc<quake_resources::Resources>) -> Self {
-        Self { inner, resources }
+    pub fn new(
+        audio_manager: Arc<AudioManager>,
+        resources_manager: Arc<quake_resources::ResourcesManager>,
+    ) -> Self {
+        Self {
+            audio_manager,
+            resources_manager,
+        }
     }
 
-    async fn builtin_play(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn play(&mut self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         let sound = self.load_static_sound_data_from_cache(args[0]).await?;
-        self.inner.play_sound(sound).await?;
-        Ok(ControlFlow::Poll)
+        self.audio_manager.play_sound(sound).await?;
+        Ok((&[], quake_traits::ControlFlow::Poll))
     }
 
-    async fn builtin_cd(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn cd(&mut self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         let mut iter = args.iter();
         match *iter.next().unwrap() {
             "play" => {
                 let track_name =
                     format!("music/track{:02}.ogg", iter.next().unwrap().parse::<u32>()?);
                 let sound = self.load_static_sound_data_from_cache(&track_name).await?;
-                self.inner.play_sound(sound).await?;
+                self.audio_manager.play_sound(sound).await?;
             }
             "loop" => {
                 let track_name =
@@ -40,25 +46,28 @@ impl AudioCommands {
                         kira::sound::static_sound::StaticSoundSettings::default().loop_region(..),
                     );
 
-                self.inner.play_music(sound).await?
+                self.audio_manager.play_music(sound).await?
             }
-            "stop" => self.inner.stop_music().await?,
-            "resume" => self.inner.resume_music().await?,
+            "stop" => self.audio_manager.stop_music().await?,
+            "resume" => self.audio_manager.resume_music().await?,
             _ => (),
         }
-        Ok(ControlFlow::Poll)
+        Ok((&[], quake_traits::ControlFlow::Poll))
     }
 
-    async fn builtin_soundlist(&mut self) -> anyhow::Result<ControlFlow> {
+    async fn soundlist(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         const SUPPORTED_EXTENSIONS: &[&str] = &[".mp3", ".ogg", ".flac", ".wav"];
 
-        use std::io::Write;
-        self.resources
+        let mut buffer = String::new();
+        self.resources_manager
             .cached_names()
             .await
             .filter(|name| SUPPORTED_EXTENSIONS.iter().any(|ext| name.ends_with(ext)))
-            .for_each(|name| writeln!(std::io::stdout(), "{}", name).unwrap());
-        Ok(ControlFlow::Poll)
+            .for_each(|name| writeln!(&mut buffer, "{}", name).unwrap());
+        Ok((
+            Box::leak(buffer.into_bytes().into_boxed_slice()),
+            quake_traits::ControlFlow::Poll,
+        ))
     }
 
     async fn load_static_sound_data_from_cache(
@@ -66,7 +75,7 @@ impl AudioCommands {
         name: &str,
     ) -> anyhow::Result<kira::sound::static_sound::StaticSoundData> {
         Ok(self
-            .resources
+            .resources_manager
             .by_cached_name::<Snd>(name)
             .await?
             .data
@@ -76,12 +85,15 @@ impl AudioCommands {
 
 #[async_trait::async_trait]
 impl quake_traits::CommandHandler for AudioCommands {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn handle_command(
+        &mut self,
+        command: &[&str],
+    ) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         match command[0] {
-            "play" => self.builtin_play(&command[1..]).await,
-            "cd" => self.builtin_cd(&command[1..]).await,
-            "soundlist" => self.builtin_soundlist().await,
-            _ => Ok(ControlFlow::Poll),
+            "play" => self.play(&command[1..]).await,
+            "cd" => self.cd(&command[1..]).await,
+            "soundlist" => self.soundlist().await,
+            _ => Ok((&[], quake_traits::ControlFlow::Poll)),
         }
     }
 }

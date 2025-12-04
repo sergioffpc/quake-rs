@@ -1,6 +1,4 @@
 use crate::client::ClientManager;
-use crate::server::ServerManager;
-use quake_traits::ControlFlow;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -11,81 +9,58 @@ pub struct ClientCommands {
 
 impl ClientCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] =
-        &["connect", "disconnect", "reconnect", "say"];
+        &["connect", "disconnect", "reconnect", "rexec"];
 
     pub fn new(client_manager: Arc<Mutex<ClientManager>>) -> Self {
         Self { client_manager }
     }
 
-    async fn builtin_connect(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn connect(
+        &mut self,
+        args: &[&str],
+    ) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         self.client_manager
             .lock()
             .await
             .connect(args[0].parse()?)
             .await?;
-        Ok(ControlFlow::Poll)
+        Ok((&[], quake_traits::ControlFlow::Poll))
     }
 
-    async fn builtin_disconnect(&mut self) -> anyhow::Result<ControlFlow> {
+    async fn disconnect(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         self.client_manager.lock().await.disconnect().await?;
-        Ok(ControlFlow::Poll)
+        Ok((&[], quake_traits::ControlFlow::Poll))
     }
 
-    async fn builtin_reconnect(&mut self) -> anyhow::Result<ControlFlow> {
+    async fn reconnect(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         self.client_manager.lock().await.reconnect().await?;
-        Ok(ControlFlow::Poll)
+        Ok((&[], quake_traits::ControlFlow::Poll))
     }
 
-    async fn builtin_say(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn rexec(&mut self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         let message = args.join(" ");
-
-        let (mut tx, _rx) = self.client_manager.lock().await.open_stream().await?;
-        tx.write(format!("\x04say {message}").as_bytes()).await?;
+        let (mut tx, mut rx) = self.client_manager.lock().await.open_stream().await?;
+        tx.write(format!("\x04{message}").as_bytes()).await?;
         tx.finish()?;
 
-        Ok(ControlFlow::Poll)
+        let output = rx.read_to_end(usize::MAX).await?;
+
+        Ok((output.leak(), quake_traits::ControlFlow::Poll))
     }
 }
 
 #[async_trait::async_trait]
 impl quake_traits::CommandHandler for ClientCommands {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
+    async fn handle_command(
+        &mut self,
+        command: &[&str],
+    ) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
         match command[0] {
-            "connect" => self.builtin_connect(&command[1..]).await,
-            "disconnect" => self.builtin_disconnect().await,
-            "reconnect" => self.builtin_reconnect().await,
-            "say" => self.builtin_say(&command[1..]).await,
-            _ => Ok(ControlFlow::Poll),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ServerCommands {
-    server_manager: Arc<ServerManager>,
-}
-
-impl ServerCommands {
-    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["say"];
-
-    pub fn new(server_manager: Arc<ServerManager>) -> Self {
-        Self { server_manager }
-    }
-
-    async fn builtin_say(&mut self, args: &[&str]) -> anyhow::Result<ControlFlow> {
-        self.server_manager
-            .broadcast(args.join(" ").into_bytes())
-            .await?;
-        Ok(ControlFlow::Poll)
-    }
-}
-
-#[async_trait::async_trait]
-impl quake_traits::CommandHandler for ServerCommands {
-    async fn handle_command(&mut self, command: &[&str]) -> anyhow::Result<ControlFlow> {
-        match command[0] {
-            "say" => self.builtin_say(&command[1..]).await,
-            _ => Ok(ControlFlow::Poll),
+            "connect" => self.connect(&command[1..]).await,
+            "disconnect" => self.disconnect().await,
+            "reconnect" => self.reconnect().await,
+            "rexec" => self.rexec(&command[1..]).await,
+            _ => Ok((&[], quake_traits::ControlFlow::Poll)),
         }
     }
 }
