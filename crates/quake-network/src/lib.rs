@@ -2,4 +2,5 @@ pub mod client;
 pub mod commands;
 pub mod server;
 
-mod requests;
+mod packet;
+mod session;

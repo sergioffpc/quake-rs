@@ -2,16 +2,16 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use tracing::log::info;
 
-pub trait RequestHandler: Debug + Send + Sync {
+pub trait PacketHandler: Debug + Send + Sync {
     fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>>;
 }
 
 #[derive(Debug, Default)]
-pub struct RequestDispatcher {
-    handlers: HashMap<u8, Box<dyn RequestHandler>>,
+pub struct PacketDispatcher {
+    handlers: HashMap<u8, Box<dyn PacketHandler>>,
 }
 
-impl RequestDispatcher {
+impl PacketDispatcher {
     pub fn dispatch(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
         match self.handlers.get(&data[0]) {
             Some(handler) => handler.handle(&data[1..]),
@@ -19,7 +19,7 @@ impl RequestDispatcher {
         }
     }
 
-    pub fn register_handler(&mut self, packet_type: u8, handler: Box<dyn RequestHandler>) {
+    pub fn register_handler(&mut self, packet_type: u8, handler: Box<dyn PacketHandler>) {
         self.handlers.insert(packet_type, handler);
     }
 
@@ -29,9 +29,9 @@ impl RequestDispatcher {
 }
 
 #[derive(Debug)]
-pub struct ConnectionControlRequestHandler;
+pub struct ConnectionRequestHandler;
 
-impl RequestHandler for ConnectionControlRequestHandler {
+impl PacketHandler for ConnectionRequestHandler {
     fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
         if data != b"QUAKE\x03" {
             return Err(anyhow::anyhow!("Invalid connection control request"));
@@ -43,15 +43,13 @@ impl RequestHandler for ConnectionControlRequestHandler {
 }
 
 #[derive(Debug)]
-pub struct ServerInfoControlRequestHandler;
+pub struct ConsoleRequestHandler;
 
-impl RequestHandler for ServerInfoControlRequestHandler {
+impl PacketHandler for ConsoleRequestHandler {
     fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        if data != b"QUAKE\x03" {
-            return Err(anyhow::anyhow!("Invalid server info control request"));
-        }
+        let command = String::from_utf8_lossy(data).to_string();
 
-        info!("Received server info control request");
+        info!("Received console command: {}", command);
         Ok(vec![].into_boxed_slice())
     }
 }

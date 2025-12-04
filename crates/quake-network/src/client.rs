@@ -1,27 +1,6 @@
-use quinn::ReadToEndError;
 use std::fs;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
 use tracing::log::{error, info};
-
-pub struct BidirectionalStream {
-    send: quinn::SendStream,
-    recv: quinn::RecvStream,
-}
-
-impl BidirectionalStream {
-    pub async fn read(&mut self) -> anyhow::Result<Box<[u8]>> {
-        Ok(self.recv.read_to_end(usize::MAX).await?.into_boxed_slice())
-    }
-
-    pub async fn write(&mut self, data: &[u8]) -> anyhow::Result<()> {
-        self.send.write_all(data).await.map_err(Into::into)
-    }
-
-    pub fn finish(&mut self) -> anyhow::Result<()> {
-        self.send.finish().map_err(Into::into)
-    }
-}
 
 pub struct ClientManager {
     endpoint: quinn::Endpoint,
@@ -34,18 +13,15 @@ impl ClientManager {
         P: AsRef<std::path::Path>,
     {
         let ca_pem = fs::read_to_string(ca_path.as_ref())?;
-
         let mut root_certs = rustls::RootCertStore::empty();
         let certs = rustls_pemfile::certs(&mut ca_pem.as_bytes()).collect::<Result<Vec<_>, _>>()?;
-
         for cert in certs {
             root_certs.add(cert)?;
         }
-
-        let config = quinn::ClientConfig::with_root_certificates(Arc::new(root_certs))?;
+        let client_config = quinn::ClientConfig::with_root_certificates(Arc::new(root_certs))?;
 
         let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
-        endpoint.set_default_client_config(config);
+        endpoint.set_default_client_config(client_config);
 
         Ok(Self {
             endpoint,
@@ -65,7 +41,7 @@ impl ClientManager {
         match rx.read_to_end(usize::MAX).await?.as_slice() {
             b"\x81" => {
                 info!("Connection control accepted");
-                tokio::spawn(Self::message_listener(
+                tokio::spawn(Self::broadcast_listener(
                     self.connection.as_ref().unwrap().clone(),
                 ));
             }
@@ -102,8 +78,8 @@ impl ClientManager {
         Ok(connection.open_bi().await?)
     }
 
-    async fn message_listener(connection: quinn::Connection) {
-        info!("Start listening for messages from server");
+    async fn broadcast_listener(connection: quinn::Connection) {
+        info!("Start listening for messages on broadcast channel");
         loop {
             match connection.accept_uni().await {
                 Ok(mut recv) => match recv.read_to_end(usize::MAX).await {

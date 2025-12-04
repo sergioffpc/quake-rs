@@ -31,7 +31,7 @@ pub fn run_app(args: Args) -> anyhow::Result<()> {
 }
 
 struct App {
-    runtime: tokio::runtime::Runtime,
+    runtime: Runtime,
     console: Arc<quake_console::Console>,
 
     server_manager: Arc<quake_network::server::ServerManager>,

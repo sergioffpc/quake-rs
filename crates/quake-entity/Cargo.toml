@@ -1,0 +1,11 @@
+[package]
+name = "quake-entity"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+quake-console = { path = "../quake-console" }
+quake-traits = { path = "../quake-traits" }
+
+anyhow.workspace = true
+async-trait.workspace = true

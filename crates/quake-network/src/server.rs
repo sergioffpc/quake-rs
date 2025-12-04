@@ -1,17 +1,18 @@
-use crate::requests::{
-    ConnectionControlRequestHandler, RequestDispatcher, ServerInfoControlRequestHandler,
-};
+use crate::packet::{ConnectionRequestHandler, ConsoleRequestHandler, PacketDispatcher};
+use crate::session::{Session, SessionManager};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::instrument;
 use tracing::log::{error, info, warn};
 
 pub struct ServerManager {
     endpoint: quinn::Endpoint,
-    dispatcher: Arc<RequestDispatcher>,
+    dispatcher: Arc<PacketDispatcher>,
     broadcast_tx: broadcast::Sender<Vec<u8>>,
+    session_manager: Arc<SessionManager>,
 }
 
 impl ServerManager {
@@ -21,21 +22,28 @@ impl ServerManager {
     {
         let (cert_der, cert_key) = Self::load_cert(cert_path, key_path)?;
         let mut server_config = quinn::ServerConfig::with_single_cert(vec![cert_der], cert_key)?;
-        server_config.transport = Arc::new(quinn::TransportConfig::default());
+
+        let mut transport_config = quinn::TransportConfig::default();
+        transport_config.max_idle_timeout(Some(Duration::from_secs(15).try_into()?));
+        transport_config.keep_alive_interval(Some(Duration::from_secs(5).try_into()?));
+        server_config.transport = Arc::new(transport_config);
 
         let endpoint = quinn::Endpoint::server(server_config, address)?;
         info!("Listening on {}", endpoint.local_addr()?);
 
-        let mut dispatcher = RequestDispatcher::default();
-        dispatcher.register_handler(0x01, Box::new(ConnectionControlRequestHandler));
-        dispatcher.register_handler(0x02, Box::new(ServerInfoControlRequestHandler));
+        let mut dispatcher = PacketDispatcher::default();
+        dispatcher.register_handler(0x01, Box::new(ConnectionRequestHandler));
+        dispatcher.register_handler(0x04, Box::new(ConsoleRequestHandler));
 
         let (broadcast_tx, _) = broadcast::channel(512);
+
+        let session_manager = Arc::new(SessionManager::default());
 
         Ok(Self {
             endpoint,
             dispatcher: Arc::new(dispatcher),
             broadcast_tx,
+            session_manager,
         })
     }
 
@@ -43,12 +51,18 @@ impl ServerManager {
         while let Some(incoming) = self.endpoint.accept().await {
             let dispatcher = self.dispatcher.clone();
             let broadcast_tx = self.broadcast_tx.clone();
+            let session_manager = self.session_manager.clone();
 
             tokio::spawn(async move {
                 match incoming.await {
                     Ok(connection) => {
-                        info!("Incoming connection from {:?}", connection.remote_address());
+                        let remote_addr = connection.remote_address();
+                        info!("Incoming connection from {}", remote_addr);
+
+                        let session = Session::new().await.unwrap();
+                        session_manager.insert(remote_addr, session);
                         Self::handle_connection(connection, dispatcher, broadcast_tx).await;
+                        session_manager.remove(&remote_addr);
                     }
                     Err(e) => error!("Error accepting connection: {}", e),
                 }
@@ -64,7 +78,7 @@ impl ServerManager {
     #[instrument(skip_all, fields(remote_addr = %connection.remote_address()))]
     async fn handle_connection(
         connection: quinn::Connection,
-        dispatcher: Arc<RequestDispatcher>,
+        dispatcher: Arc<PacketDispatcher>,
         broadcast_tx: broadcast::Sender<Vec<u8>>,
     ) {
         let mut broadcast_rx = broadcast_tx.subscribe();
@@ -82,7 +96,7 @@ impl ServerManager {
                             break;
                         }
                         Err(e) => {
-                            error!("Error accepting incoming bidirectional stream: {}", e);
+                            error!("Connection closed: {}", e);
                             break;
                         }
                     }
@@ -112,7 +126,7 @@ impl ServerManager {
     async fn handle_stream(
         mut tx: quinn::SendStream,
         mut rx: quinn::RecvStream,
-        dispatcher: &Arc<RequestDispatcher>,
+        dispatcher: &Arc<PacketDispatcher>,
     ) {
         match rx.read_to_end(usize::MAX).await {
             Ok(data) => {
