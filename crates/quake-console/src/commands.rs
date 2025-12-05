@@ -34,9 +34,7 @@ impl ConsoleCommands {
             0 => {
                 #[derive(Tabled, Clone)]
                 struct AliasEntry {
-                    #[tabled(rename = "Alias")]
-                    name: String,
-                    #[tabled(rename = "Command")]
+                    alias: String,
                     command: String,
                 }
                 let alias_data: Vec<AliasEntry> = self
@@ -46,7 +44,7 @@ impl ConsoleCommands {
                     .await
                     .iter()
                     .map(|(k, v)| AliasEntry {
-                        name: k.clone(),
+                        alias: k.clone(),
                         command: v
                             .clone()
                             .split_whitespace()
@@ -108,9 +106,7 @@ impl ConsoleCommands {
     async fn cvars(&self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         #[derive(Tabled, Clone)]
         struct VariableEntry {
-            #[tabled(rename = "Variable")]
-            name: String,
-            #[tabled(rename = "Value")]
+            variable: String,
             value: String,
         }
         let cvars_data: Vec<VariableEntry> = self
@@ -120,7 +116,7 @@ impl ConsoleCommands {
             .await
             .iter()
             .map(|(k, v)| VariableEntry {
-                name: k.clone(),
+                variable: k.clone(),
                 value: v.clone(),
             })
             .collect();

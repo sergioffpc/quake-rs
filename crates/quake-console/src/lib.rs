@@ -133,6 +133,10 @@ impl ConsoleManager {
             match readline {
                 Ok(line) => {
                     self.append_text(line.as_str()).await;
+                    let output = self.execute().await?;
+                    if !output.is_empty() {
+                        print!("{}", output);
+                    }
                 }
                 Err(rustyline::error::ReadlineError::Interrupted)
                 | Err(rustyline::error::ReadlineError::Eof) => {

@@ -1,5 +1,8 @@
 use crate::client::ClientManager;
+use crate::server::ServerManager;
 use std::sync::Arc;
+use tabled::Table;
+use tabled::settings::{Padding, Style};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -63,6 +66,41 @@ impl quake_traits::CommandHandler for ClientCommands {
             "disconnect" => self.disconnect().await,
             "reconnect" => self.reconnect().await,
             "rexec" => self.rexec(&command[1..]).await,
+            _ => Ok((String::default(), quake_traits::ControlFlow::Poll)),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ServerCommands {
+    server_manager: Arc<ServerManager>,
+}
+
+impl ServerCommands {
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["net_stats"];
+
+    pub fn new(server_manager: Arc<ServerManager>) -> Self {
+        Self { server_manager }
+    }
+
+    async fn net_stats(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+        let net_stats_data = self.server_manager.stats();
+        let buffer = Table::new(vec![net_stats_data])
+            .with(Style::re_structured_text())
+            .with(Padding::new(1, 1, 0, 0))
+            .to_string();
+        Ok((buffer, quake_traits::ControlFlow::Poll))
+    }
+}
+
+#[async_trait::async_trait]
+impl quake_traits::CommandHandler for ServerCommands {
+    async fn handle_command(
+        &mut self,
+        command: &[&str],
+    ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+        match command[0] {
+            "net_stats" => self.net_stats().await,
             _ => Ok((String::default(), quake_traits::ControlFlow::Poll)),
         }
     }

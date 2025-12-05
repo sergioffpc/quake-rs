@@ -3,6 +3,7 @@ use crate::stream::QuakeStreamHandlerBuilder;
 use std::fs::File;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+use tokio::task::JoinHandle;
 use tracing::log::{error, info};
 
 pub fn run_app(args: Args) -> anyhow::Result<()> {
@@ -33,6 +34,7 @@ pub fn run_app(args: Args) -> anyhow::Result<()> {
 
 struct App {
     runtime: Runtime,
+    console_manager: Arc<quake_console::ConsoleManager>,
     resources_manager: Arc<quake_resources::ResourcesManager>,
     server_manager: Arc<quake_network::server::ServerManager>,
 }
@@ -42,6 +44,7 @@ impl App {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?;
+        let console_manager = Arc::new(quake_console::ConsoleManager::default());
         let resources_manager = runtime.block_on(async {
             Arc::new(
                 quake_resources::ResourcesManager::new(args.base_path)
@@ -61,17 +64,107 @@ impl App {
             )
         });
 
+        Self::register_console_commands(
+            &runtime,
+            console_manager.clone(),
+            resources_manager.clone(),
+        )?;
+        Self::register_resources_commands(
+            &runtime,
+            console_manager.clone(),
+            resources_manager.clone(),
+        )?;
+        Self::register_server_commands(&runtime, console_manager.clone(), server_manager.clone())?;
+
         Ok(Self {
             runtime,
+            console_manager,
             resources_manager,
             server_manager,
         })
     }
 
     fn start(&self) {
+        self.runtime.block_on(async {
+            let handles = [self.tick_loop(), self.repl_loop(), self.accept_loop()];
+            for handle in handles {
+                handle
+                    .unwrap()
+                    .await
+                    .expect("Error running task in background");
+            }
+        });
+    }
+
+    fn tick_loop(&self) -> anyhow::Result<JoinHandle<()>> {
+        let console_manager = self.console_manager.clone();
+
+        Ok(self.runtime.spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }))
+    }
+
+    fn repl_loop(&self) -> anyhow::Result<JoinHandle<()>> {
+        let console_manager = self.console_manager.clone();
+
+        Ok(self.runtime.spawn(async move {
+            if let Err(e) = console_manager.repl().await {
+                error!("Error running REPL: {}", e);
+            }
+        }))
+    }
+
+    fn accept_loop(&self) -> anyhow::Result<JoinHandle<()>> {
         let server_manager = self.server_manager.clone();
         let stream_handler_builder = QuakeStreamHandlerBuilder::new(self.resources_manager.clone());
-        self.runtime
-            .block_on(async move { server_manager.accept(stream_handler_builder).await.unwrap() });
+
+        Ok(self.runtime.spawn(async move {
+            if let Err(e) = server_manager.accept(stream_handler_builder).await {
+                error!("Error accepting connections: {}", e);
+            }
+        }))
+    }
+
+    fn register_console_commands(
+        runtime: &Runtime,
+        console_manager: Arc<quake_console::ConsoleManager>,
+        resources_manager: Arc<quake_resources::ResourcesManager>,
+    ) -> anyhow::Result<()> {
+        let console_commands = quake_console::commands::ConsoleCommands::new(
+            console_manager.clone(),
+            resources_manager.clone(),
+        );
+        runtime.block_on(console_manager.register_commands_handler(
+            quake_console::commands::ConsoleCommands::BUILTIN_COMMANDS,
+            console_commands,
+        ))
+    }
+
+    fn register_resources_commands(
+        runtime: &Runtime,
+        console_manager: Arc<quake_console::ConsoleManager>,
+        resources_manager: Arc<quake_resources::ResourcesManager>,
+    ) -> anyhow::Result<()> {
+        let resources_commands =
+            quake_resources::commands::ResourcesCommands::new(resources_manager.clone());
+        runtime.block_on(console_manager.register_commands_handler(
+            quake_resources::commands::ResourcesCommands::BUILTIN_COMMANDS,
+            resources_commands,
+        ))
+    }
+
+    fn register_server_commands(
+        runtime: &Runtime,
+        console_manager: Arc<quake_console::ConsoleManager>,
+        server_manager: Arc<quake_network::server::ServerManager>,
+    ) -> anyhow::Result<()> {
+        let server_manager_commands =
+            quake_network::commands::ServerCommands::new(server_manager.clone());
+        runtime.block_on(console_manager.register_commands_handler(
+            quake_network::commands::ServerCommands::BUILTIN_COMMANDS,
+            server_manager_commands,
+        ))
     }
 }

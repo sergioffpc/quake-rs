@@ -3,9 +3,19 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tabled::Tabled;
 use tokio::sync::broadcast;
 use tracing::instrument;
 use tracing::log::{error, info, warn};
+
+#[derive(Copy, Debug, Clone, Tabled)]
+pub struct ServerStats {
+    pub open_connections: u64,
+    pub accepted_handshakes: u64,
+    pub outgoing_handshakes: u64,
+    pub refused_handshakes: u64,
+    pub ignored_handshakes: u64,
+}
 
 pub struct ServerManager {
     endpoint: quinn::Endpoint,
@@ -65,6 +75,17 @@ impl ServerManager {
     pub async fn broadcast(&self, message: Vec<u8>) -> anyhow::Result<()> {
         self.broadcast_sender.send(message)?;
         Ok(())
+    }
+
+    pub fn stats(&self) -> ServerStats {
+        let stats = self.endpoint.stats();
+        ServerStats {
+            open_connections: self.endpoint.open_connections() as u64,
+            accepted_handshakes: stats.accepted_handshakes,
+            outgoing_handshakes: stats.outgoing_handshakes,
+            refused_handshakes: stats.refused_handshakes,
+            ignored_handshakes: stats.ignored_handshakes,
+        }
     }
 
     #[instrument(skip_all, fields(remote_addr = %connection.remote_address()))]

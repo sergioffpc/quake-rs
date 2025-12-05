@@ -176,8 +176,7 @@ impl quake_window::WindowEventHandler for App {
     }
 
     fn on_update_frame(&mut self, _delta_time: f64) -> anyhow::Result<()> {
-        let output = self.runtime.block_on(self.console_manager.execute())?;
-        print!("{}", output);
+        self.runtime.block_on(self.console_manager.execute())?;
 
         Ok(())
     }
