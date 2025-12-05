@@ -15,7 +15,7 @@ impl InputCommands {
         }
     }
 
-    async fn bind(&self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    async fn bind(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         let bind = args[0];
         if args.len() > 1 {
             let s = args[1..].join(" ");
@@ -28,17 +28,17 @@ impl InputCommands {
         } else {
             self.input_manager.bindings.unbind(bind).await;
         }
-        Ok((&[], quake_traits::ControlFlow::Poll))
+        Ok((String::default(), quake_traits::ControlFlow::Poll))
     }
 
-    async fn unbind(&self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    async fn unbind(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         self.input_manager.bindings.unbind(args[0]).await;
-        Ok((&[], quake_traits::ControlFlow::Poll))
+        Ok((String::default(), quake_traits::ControlFlow::Poll))
     }
 
-    async fn unbindall(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    async fn unbindall(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         self.input_manager.bindings.clear().await;
-        Ok((&[], quake_traits::ControlFlow::Poll))
+        Ok((String::default(), quake_traits::ControlFlow::Poll))
     }
 }
 
@@ -47,12 +47,12 @@ impl quake_traits::CommandHandler for InputCommands {
     async fn handle_command(
         &mut self,
         command: &[&str],
-    ) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         match command[0] {
             "bind" => self.bind(&command[1..]).await,
             "unbind" => self.unbind(&command[1..]).await,
             "unbindall" => self.unbindall().await,
-            _ => Ok((&[], quake_traits::ControlFlow::Poll)),
+            _ => Ok((String::default(), quake_traits::ControlFlow::Poll)),
         }
     }
 }

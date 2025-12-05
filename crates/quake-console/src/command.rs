@@ -17,6 +17,14 @@ impl CommandAliases {
     pub fn get(&self, alias: &str) -> Option<&str> {
         self.aliases.get(alias).map(|command| command.as_str())
     }
+
+    pub fn clear(&mut self) {
+        self.aliases.clear();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.aliases.iter()
+    }
 }
 
 #[derive(Default)]
@@ -112,5 +120,13 @@ impl CommandVariables {
 
     pub fn set(&mut self, name: &str, value: &str) {
         self.variables.insert(name.to_string(), value.to_string());
+    }
+
+    pub fn clear(&mut self) {
+        self.variables.clear();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.variables.iter()
     }
 }

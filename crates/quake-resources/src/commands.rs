@@ -14,28 +14,22 @@ impl ResourcesCommands {
         Self { resource_manager }
     }
 
-    async fn cat(&mut self, args: &[&str]) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    async fn cat(&mut self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         let buffer = self.resource_manager.by_name::<Vec<u8>>(args[0]).await?;
-        Ok((
-            Box::leak(buffer.into_boxed_slice()),
-            quake_traits::ControlFlow::Poll,
-        ))
+        Ok((String::from_utf8(buffer)?, quake_traits::ControlFlow::Poll))
     }
 
-    async fn flush(&self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    async fn flush(&self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         self.resource_manager.flush().await?;
-        Ok((&[], quake_traits::ControlFlow::Poll))
+        Ok((String::default(), quake_traits::ControlFlow::Poll))
     }
 
-    fn ls(&mut self) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    fn ls(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         let mut buffer = String::new();
         for name in self.resource_manager.file_names() {
             writeln!(&mut buffer, "{}", name)?;
         }
-        Ok((
-            Box::leak(buffer.into_bytes().into_boxed_slice()),
-            quake_traits::ControlFlow::Poll,
-        ))
+        Ok((buffer, quake_traits::ControlFlow::Poll))
     }
 }
 
@@ -44,12 +38,12 @@ impl quake_traits::CommandHandler for ResourcesCommands {
     async fn handle_command(
         &mut self,
         command: &[&str],
-    ) -> anyhow::Result<(&[u8], quake_traits::ControlFlow)> {
+    ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         match command[0] {
             "cat" => self.cat(&command[1..]).await,
             "flush" => self.flush().await,
             "ls" => self.ls(),
-            _ => Ok((&[], quake_traits::ControlFlow::Poll)),
+            _ => Ok((String::default(), quake_traits::ControlFlow::Poll)),
         }
     }
 }

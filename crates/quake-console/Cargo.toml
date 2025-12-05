@@ -10,6 +10,7 @@ quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
 async-trait.workspace = true
+tabled.workspace = true
 tokio.workspace = true
 
 rustyline = { version = "17.0.2", features = ["derive"] }

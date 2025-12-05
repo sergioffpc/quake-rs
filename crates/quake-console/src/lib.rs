@@ -64,7 +64,7 @@ impl ConsoleManager {
                 {
                     (output, control_flow) => {
                         if !output.is_empty() {
-                            writeln!(&mut buffer, "{}", String::from_utf8_lossy(output))?;
+                            writeln!(&mut buffer, "{}", output)?;
                         }
                         match control_flow {
                             quake_traits::ControlFlow::Wait => break,
