@@ -103,11 +103,11 @@ impl App {
 
         Ok(self.runtime.spawn(async move {
             loop {
-                let sys_ticrate = console_manager
-                    .get::<f32>("sys_ticrate")
+                let sys_tick_rate = console_manager
+                    .get::<f32>("sys.tick.rate")
                     .await
                     .unwrap_or(0.05);
-                tokio::time::sleep(std::time::Duration::from_secs_f32(sys_ticrate)).await;
+                tokio::time::sleep(std::time::Duration::from_secs_f32(sys_tick_rate)).await;
             }
         }))
     }

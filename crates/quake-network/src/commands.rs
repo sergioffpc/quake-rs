@@ -22,12 +22,23 @@ impl ClientCommands {
         &mut self,
         args: &[&str],
     ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
-        self.client_manager
-            .lock()
-            .await
-            .connect(args[0].parse()?)
-            .await?;
+        let address = Self::parse_address(args)?;
+        self.client_manager.lock().await.connect(address).await?;
         Ok((String::default(), quake_traits::ControlFlow::Poll))
+    }
+
+    fn parse_address(args: &[&str]) -> anyhow::Result<std::net::SocketAddr> {
+        const DEFAULT_HOST: &str = "127.0.0.1";
+        const DEFAULT_PORT: u16 = 26000;
+
+        let address_str = match args.len() {
+            0 => format!("{}:{}", DEFAULT_HOST, DEFAULT_PORT),
+            1 => format!("{}:{}", args[0], DEFAULT_PORT),
+            2 => format!("{}:{}", args[0], args[1]),
+            _ => return Err(anyhow::anyhow!("Too many arguments")),
+        };
+
+        Ok(address_str.parse()?)
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {

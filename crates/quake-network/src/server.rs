@@ -38,18 +38,19 @@ impl ServerManager {
         let mut server_config = quinn::ServerConfig::with_single_cert(vec![cert_der], cert_key)?;
 
         let mut transport_config = quinn::TransportConfig::default();
-        let net_messagetimeout = console_manager
-            .get::<u64>("net_messagetimeout")
+        let net_max_idle_timeout = console_manager
+            .get::<u64>("net.max.idle.timeout")
             .await
             .unwrap_or(15);
         transport_config
-            .max_idle_timeout(Some(Duration::from_secs(net_messagetimeout).try_into()?));
-        let net_keepaliveinterval = console_manager
-            .get::<u64>("net_keepaliveinterval")
+            .max_idle_timeout(Some(Duration::from_secs(net_max_idle_timeout).try_into()?));
+        let net_keep_alive_interval = console_manager
+            .get::<u64>("net.keep.alive.interval")
             .await
             .unwrap_or(5);
-        transport_config
-            .keep_alive_interval(Some(Duration::from_secs(net_keepaliveinterval).try_into()?));
+        transport_config.keep_alive_interval(Some(
+            Duration::from_secs(net_keep_alive_interval).try_into()?,
+        ));
         server_config.transport = Arc::new(transport_config);
 
         let endpoint = quinn::Endpoint::server(server_config, address)?;
@@ -69,12 +70,12 @@ impl ServerManager {
         B: StreamHandlerBuilder,
     {
         while let Some(incoming) = self.endpoint.accept().await {
-            let net_maxconnections = self
+            let net_max_connections = self
                 .console_manager
-                .get::<usize>("net_maxconnections")
+                .get::<usize>("net.max.connections")
                 .await
                 .unwrap_or(128);
-            if self.endpoint.open_connections() > net_maxconnections {
+            if self.endpoint.open_connections() > net_max_connections {
                 warn!("Maximum number of connections reached, rejecting new connection");
                 continue;
             }
