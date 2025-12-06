@@ -58,6 +58,7 @@ impl App {
                     args.listen.parse().unwrap(),
                     args.cert_path,
                     args.key_path,
+                    console_manager.clone(),
                 )
                 .await
                 .unwrap(),
@@ -68,6 +69,7 @@ impl App {
             &runtime,
             console_manager.clone(),
             resources_manager.clone(),
+            &args.stuffcmds.unwrap_or_default(),
         )?;
         Self::register_resources_commands(
             &runtime,
@@ -101,7 +103,11 @@ impl App {
 
         Ok(self.runtime.spawn(async move {
             loop {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let sys_ticrate = console_manager
+                    .get::<f32>("sys_ticrate")
+                    .await
+                    .unwrap_or(0.05);
+                tokio::time::sleep(std::time::Duration::from_secs_f32(sys_ticrate)).await;
             }
         }))
     }
@@ -131,14 +137,17 @@ impl App {
         runtime: &Runtime,
         console_manager: Arc<quake_console::ConsoleManager>,
         resources_manager: Arc<quake_resources::ResourcesManager>,
+        stuffcmds: &str,
     ) -> anyhow::Result<()> {
-        let console_commands = quake_console::commands::ConsoleCommands::new(
+        let mut console_manager_commands = quake_console::commands::ConsoleCommands::new(
             console_manager.clone(),
-            resources_manager.clone(),
+            resources_manager,
         );
+        console_manager_commands.set_stuffcmds(stuffcmds);
+
         runtime.block_on(console_manager.register_commands_handler(
             quake_console::commands::ConsoleCommands::BUILTIN_COMMANDS,
-            console_commands,
+            console_manager_commands,
         ))
     }
 
@@ -147,11 +156,11 @@ impl App {
         console_manager: Arc<quake_console::ConsoleManager>,
         resources_manager: Arc<quake_resources::ResourcesManager>,
     ) -> anyhow::Result<()> {
-        let resources_commands =
-            quake_resources::commands::ResourcesCommands::new(resources_manager.clone());
+        let resources_manager_commands =
+            quake_resources::commands::ResourcesCommands::new(resources_manager);
         runtime.block_on(console_manager.register_commands_handler(
             quake_resources::commands::ResourcesCommands::BUILTIN_COMMANDS,
-            resources_commands,
+            resources_manager_commands,
         ))
     }
 
@@ -160,8 +169,7 @@ impl App {
         console_manager: Arc<quake_console::ConsoleManager>,
         server_manager: Arc<quake_network::server::ServerManager>,
     ) -> anyhow::Result<()> {
-        let server_manager_commands =
-            quake_network::commands::ServerCommands::new(server_manager.clone());
+        let server_manager_commands = quake_network::commands::ServerCommands::new(server_manager);
         runtime.block_on(console_manager.register_commands_handler(
             quake_network::commands::ServerCommands::BUILTIN_COMMANDS,
             server_manager_commands,

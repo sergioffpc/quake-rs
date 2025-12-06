@@ -1,5 +1,7 @@
 use crate::InputManager;
 use std::sync::Arc;
+use tabled::settings::{Padding, Style};
+use tabled::{Table, Tabled};
 
 #[derive(Clone)]
 pub struct InputCommands {
@@ -9,26 +11,57 @@ pub struct InputCommands {
 impl InputCommands {
     pub const BUILTIN_COMMANDS: &'static [&'static str] = &["bind", "unbind", "unbindall"];
 
-    pub fn new(inner: Arc<InputManager>) -> Self {
-        Self {
-            input_manager: inner,
-        }
+    pub fn new(input_manager: Arc<InputManager>) -> Self {
+        Self { input_manager }
     }
 
     async fn bind(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
-        let bind = args[0];
-        if args.len() > 1 {
-            let s = args[1..].join(" ");
-            let command_text = s
-                .strip_prefix('"')
-                .and_then(|s| s.strip_suffix('"'))
-                .unwrap_or(&s)
-                .replace(";", "\n");
-            self.input_manager.bindings.bind(bind, &command_text).await;
-        } else {
-            self.input_manager.bindings.unbind(bind).await;
+        let mut buffer = String::new();
+
+        match args.len() {
+            0 => {
+                #[derive(Tabled, Clone, Debug)]
+                struct BindEntry {
+                    key: String,
+                    binding: String,
+                }
+                let bind_data: Vec<BindEntry> = self
+                    .input_manager
+                    .bindings
+                    .iter()
+                    .await
+                    .map(|(k, v)| BindEntry {
+                        key: k.clone(),
+                        binding: v.clone(),
+                    })
+                    .collect();
+
+                buffer = if !bind_data.is_empty() {
+                    Table::new(bind_data)
+                        .with(Style::re_structured_text())
+                        .with(Padding::new(1, 1, 0, 0))
+                        .to_string()
+                } else {
+                    "No bindings defined".to_string()
+                };
+            }
+            1 => {
+                self.input_manager.bindings.unbind(args[0]).await;
+            }
+            _ => {
+                let s = args[1..].join(" ");
+                let command_text = s
+                    .strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .unwrap_or(&s)
+                    .replace(";", "\n");
+                self.input_manager
+                    .bindings
+                    .bind(args[0], &command_text)
+                    .await;
+            }
         }
-        Ok((String::default(), quake_traits::ControlFlow::Poll))
+        Ok((buffer, quake_traits::ControlFlow::Poll))
     }
 
     async fn unbind(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {

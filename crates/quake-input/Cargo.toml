@@ -9,5 +9,6 @@ quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
 async-trait.workspace = true
+tabled.workspace = true
 tokio.workspace = true
 tracing.workspace = true

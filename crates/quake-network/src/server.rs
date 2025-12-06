@@ -20,10 +20,17 @@ pub struct ServerStats {
 pub struct ServerManager {
     endpoint: quinn::Endpoint,
     broadcast_sender: broadcast::Sender<Vec<u8>>,
+
+    console_manager: Arc<quake_console::ConsoleManager>,
 }
 
 impl ServerManager {
-    pub async fn new<P>(address: SocketAddr, cert_path: P, key_path: P) -> anyhow::Result<Self>
+    pub async fn new<P>(
+        address: SocketAddr,
+        cert_path: P,
+        key_path: P,
+        console_manager: Arc<quake_console::ConsoleManager>,
+    ) -> anyhow::Result<Self>
     where
         P: AsRef<std::path::Path>,
     {
@@ -31,8 +38,18 @@ impl ServerManager {
         let mut server_config = quinn::ServerConfig::with_single_cert(vec![cert_der], cert_key)?;
 
         let mut transport_config = quinn::TransportConfig::default();
-        transport_config.max_idle_timeout(Some(Duration::from_secs(15).try_into()?));
-        transport_config.keep_alive_interval(Some(Duration::from_secs(5).try_into()?));
+        let net_messagetimeout = console_manager
+            .get::<u64>("net_messagetimeout")
+            .await
+            .unwrap_or(15);
+        transport_config
+            .max_idle_timeout(Some(Duration::from_secs(net_messagetimeout).try_into()?));
+        let net_keepaliveinterval = console_manager
+            .get::<u64>("net_keepaliveinterval")
+            .await
+            .unwrap_or(5);
+        transport_config
+            .keep_alive_interval(Some(Duration::from_secs(net_keepaliveinterval).try_into()?));
         server_config.transport = Arc::new(transport_config);
 
         let endpoint = quinn::Endpoint::server(server_config, address)?;
@@ -43,6 +60,7 @@ impl ServerManager {
         Ok(Self {
             endpoint,
             broadcast_sender,
+            console_manager,
         })
     }
 
@@ -51,6 +69,16 @@ impl ServerManager {
         B: StreamHandlerBuilder,
     {
         while let Some(incoming) = self.endpoint.accept().await {
+            let net_maxconnections = self
+                .console_manager
+                .get::<usize>("net_maxconnections")
+                .await
+                .unwrap_or(128);
+            if self.endpoint.open_connections() > net_maxconnections {
+                warn!("Maximum number of connections reached, rejecting new connection");
+                continue;
+            }
+
             let broadcast_receiver = self.broadcast_sender.subscribe();
             let stream_handler = builder.build().await?;
 
@@ -127,7 +155,10 @@ impl ServerManager {
                         Err(broadcast::error::RecvError::Lagged(_)) => {
                             warn!("Broadcast channel lagged");
                         }
-                        Err(_) => break,
+                        Err(e) => {
+                            error!("Broadcast channel closed: {}", e);
+                            break
+                        },
                     }
                 }
             }

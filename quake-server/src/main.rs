@@ -39,6 +39,9 @@ struct Args {
         help = "Listen address for server"
     )]
     listen: String,
+
+    #[arg(last = true)]
+    stuffcmds: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {

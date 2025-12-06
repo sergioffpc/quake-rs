@@ -5,7 +5,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-quake-resources = { path = "../quake-resources" }
+quake-console = { path = "../quake-console" }
 quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true

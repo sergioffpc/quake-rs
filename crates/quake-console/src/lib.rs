@@ -2,6 +2,7 @@ use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
 use std::fmt::Write;
 use tokio::sync::{Mutex, RwLock};
+use tracing::log::info;
 
 pub mod command;
 pub mod commands;
@@ -46,6 +47,8 @@ impl ConsoleManager {
     pub async fn execute(&self) -> anyhow::Result<String> {
         let mut buffer = String::new();
         while let Some(command_line) = self.fetch_next_command().await {
+            info!("Executing command: {}", command_line);
+
             let (name, args) = self.parse_command_line(command_line.as_str());
 
             if let Some(command_line) = self.command_aliases.read().await.get(name) {
@@ -91,19 +94,11 @@ impl ConsoleManager {
         Ok(buffer)
     }
 
-    pub async fn cvar(&self, name: &str) -> Option<String> {
-        self.command_variables.read().await.get::<String>(name)
-    }
-
-    async fn fetch_next_command(&self) -> Option<String> {
-        self.command_buffer.lock().await.pop_front()
-    }
-
-    fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
-        let mut args = command_line.split_whitespace();
-        let name = args.next().unwrap_or("");
-        let args = args.collect::<Vec<_>>();
-        (name, args)
+    pub async fn get<T>(&self, name: &str) -> Option<T>
+    where
+        T: std::str::FromStr,
+    {
+        self.command_variables.read().await.get::<T>(name)
     }
 
     pub async fn repl(&self) -> anyhow::Result<()> {
@@ -150,6 +145,17 @@ impl ConsoleManager {
 
         rl.save_history(history_file)
             .map_err(|err| anyhow::anyhow!(err))
+    }
+
+    async fn fetch_next_command(&self) -> Option<String> {
+        self.command_buffer.lock().await.pop_front()
+    }
+
+    fn parse_command_line<'a>(&self, command_line: &'a str) -> (&'a str, Vec<&'a str>) {
+        let mut args = command_line.split_whitespace();
+        let name = args.next().unwrap_or("");
+        let args = args.collect::<Vec<_>>();
+        (name, args)
     }
 }
 

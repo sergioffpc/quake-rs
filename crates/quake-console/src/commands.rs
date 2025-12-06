@@ -8,11 +8,20 @@ use tabled::{Table, Tabled};
 pub struct ConsoleCommands {
     console_manager: Arc<ConsoleManager>,
     resources_manager: Arc<quake_resources::ResourcesManager>,
+    stuffcmds: String,
 }
 
 impl ConsoleCommands {
-    pub const BUILTIN_COMMANDS: &'static [&'static str] =
-        &["alias", "cvars", "echo", "exec", "quit", "wait", "version"];
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &[
+        "alias",
+        "vars",
+        "echo",
+        "exec",
+        "quit",
+        "stuffcmds",
+        "wait",
+        "version",
+    ];
 
     pub fn new(
         console_manager: Arc<ConsoleManager>,
@@ -21,18 +30,40 @@ impl ConsoleCommands {
         Self {
             console_manager,
             resources_manager,
+            stuffcmds: String::default(),
         }
     }
 
-    async fn alias(
-        &mut self,
-        args: &[&str],
-    ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+    pub fn set_stuffcmds(&mut self, stuffcmds: &str) {
+        let mut result = Vec::new();
+        let mut iter = stuffcmds.split_whitespace().peekable();
+
+        while let Some(token) = iter.next() {
+            if let Some(cmd) = token.strip_prefix('+') {
+                let mut line = String::new();
+                line.push_str(cmd);
+
+                while let Some(&next) = iter.peek() {
+                    if next.starts_with('+') {
+                        break;
+                    }
+                    line.push(' ');
+                    line.push_str(iter.next().unwrap());
+                }
+
+                result.push(line);
+            }
+        }
+
+        self.stuffcmds = result.join("\n");
+    }
+
+    async fn alias(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         let mut buffer = String::new();
 
         match args.len() {
             0 => {
-                #[derive(Tabled, Clone)]
+                #[derive(Tabled, Clone, Debug)]
                 struct AliasEntry {
                     alias: String,
                     command: String,
@@ -86,13 +117,13 @@ impl ConsoleCommands {
         Ok((buffer, quake_traits::ControlFlow::Poll))
     }
 
-    fn echo(&mut self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+    fn echo(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         let mut buffer = String::new();
         writeln!(&mut buffer, "{}", args.join(" "))?;
         Ok((buffer, quake_traits::ControlFlow::Poll))
     }
 
-    async fn exec(&mut self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+    async fn exec(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         if let Ok(text) = self.resources_manager.by_name::<String>(args[0]).await {
             self.console_manager
                 .command_buffer
@@ -103,13 +134,13 @@ impl ConsoleCommands {
         Ok((String::default(), quake_traits::ControlFlow::Poll))
     }
 
-    async fn cvars(&self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+    async fn vars(&self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         #[derive(Tabled, Clone)]
         struct VariableEntry {
             variable: String,
             value: String,
         }
-        let cvars_data: Vec<VariableEntry> = self
+        let vars_data: Vec<VariableEntry> = self
             .console_manager
             .command_variables
             .read()
@@ -121,8 +152,8 @@ impl ConsoleCommands {
             })
             .collect();
 
-        let buffer = if !cvars_data.is_empty() {
-            Table::new(cvars_data)
+        let buffer = if !vars_data.is_empty() {
+            Table::new(vars_data)
                 .with(Style::re_structured_text())
                 .with(Padding::new(1, 1, 0, 0))
                 .to_string()
@@ -132,15 +163,24 @@ impl ConsoleCommands {
         Ok((buffer, quake_traits::ControlFlow::Poll))
     }
 
-    fn quit(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+    fn quit(&self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         std::process::exit(0);
     }
 
-    fn wait(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+    async fn stuffcmds(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+        self.console_manager
+            .command_buffer
+            .lock()
+            .await
+            .push_front(&self.stuffcmds);
+        Ok((String::new(), quake_traits::ControlFlow::Poll))
+    }
+
+    fn wait(&self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         Ok((String::default(), quake_traits::ControlFlow::Wait))
     }
 
-    fn version(&mut self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+    fn version(&self) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         let mut buffer = String::new();
         writeln!(&mut buffer, "Quake Version: {}", env!("CARGO_PKG_VERSION"))?;
         Ok((buffer, quake_traits::ControlFlow::Poll))
@@ -155,10 +195,11 @@ impl quake_traits::CommandHandler for ConsoleCommands {
     ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
         match command[0] {
             "alias" => self.alias(&command[1..]).await,
-            "cvars" => self.cvars().await,
+            "vars" => self.vars().await,
             "echo" => self.echo(&command[1..]),
             "exec" => self.exec(&command[1..]).await,
             "quit" => self.quit(),
+            "stuffcmds" => self.stuffcmds().await,
             "wait" => self.wait(),
             "version" => self.version(),
             _ => Ok((String::default(), quake_traits::ControlFlow::Poll)),

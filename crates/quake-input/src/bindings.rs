@@ -7,11 +7,11 @@ pub struct Bindings {
 }
 
 impl Bindings {
-    pub async fn bind(&self, key: &str, command: &str) {
+    pub async fn bind(&self, key: &str, binding: &str) {
         self.bindings
             .write()
             .await
-            .insert(key.to_string(), command.to_string());
+            .insert(key.to_string(), binding.to_string());
     }
 
     pub async fn unbind(&self, key: &str) {
@@ -24,5 +24,14 @@ impl Bindings {
 
     pub async fn clear(&self) {
         self.bindings.write().await.clear();
+    }
+
+    pub async fn iter(&self) -> impl Iterator<Item = (String, String)> {
+        let bindings = self.bindings.read().await;
+        let data: Vec<(String, String)> = bindings
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        data.into_iter()
     }
 }

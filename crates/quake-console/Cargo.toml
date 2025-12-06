@@ -12,6 +12,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 tabled.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 
 rustyline = { version = "17.0.2", features = ["derive"] }
 multimap = "0.10.1"

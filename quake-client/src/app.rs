@@ -40,6 +40,7 @@ impl App {
             &runtime,
             console_manager.clone(),
             resources_manager.clone(),
+            &args.stuffcmds.unwrap_or_default(),
         )?;
         Self::register_resources_commands(
             &runtime,
@@ -67,14 +68,17 @@ impl App {
         runtime: &Runtime,
         console_manager: Arc<quake_console::ConsoleManager>,
         resources_manager: Arc<quake_resources::ResourcesManager>,
+        stuffcmds: &str,
     ) -> anyhow::Result<()> {
-        let console_commands = quake_console::commands::ConsoleCommands::new(
+        let mut console_manager_commands = quake_console::commands::ConsoleCommands::new(
             console_manager.clone(),
-            resources_manager.clone(),
+            resources_manager,
         );
+        console_manager_commands.set_stuffcmds(stuffcmds);
+
         runtime.block_on(console_manager.register_commands_handler(
             quake_console::commands::ConsoleCommands::BUILTIN_COMMANDS,
-            console_commands,
+            console_manager_commands,
         ))
     }
 
@@ -83,11 +87,11 @@ impl App {
         console_manager: Arc<quake_console::ConsoleManager>,
         resources_manager: Arc<quake_resources::ResourcesManager>,
     ) -> anyhow::Result<()> {
-        let resources_commands =
-            quake_resources::commands::ResourcesCommands::new(resources_manager.clone());
+        let resources_manager_commands =
+            quake_resources::commands::ResourcesCommands::new(resources_manager);
         runtime.block_on(console_manager.register_commands_handler(
             quake_resources::commands::ResourcesCommands::BUILTIN_COMMANDS,
-            resources_commands,
+            resources_manager_commands,
         ))
     }
 
@@ -97,10 +101,8 @@ impl App {
         resources_manager: Arc<quake_resources::ResourcesManager>,
         audio_manager: Arc<quake_audio::AudioManager>,
     ) -> anyhow::Result<()> {
-        let audio_manager_commands = quake_audio::commands::AudioCommands::new(
-            audio_manager.clone(),
-            resources_manager.clone(),
-        );
+        let audio_manager_commands =
+            quake_audio::commands::AudioCommands::new(audio_manager, resources_manager);
         runtime.block_on(console_manager.register_commands_handler(
             quake_audio::commands::AudioCommands::BUILTIN_COMMANDS,
             audio_manager_commands,
@@ -112,8 +114,7 @@ impl App {
         console_manager: Arc<quake_console::ConsoleManager>,
         client_manager: Arc<Mutex<quake_network::client::ClientManager>>,
     ) -> anyhow::Result<()> {
-        let client_manager_commands =
-            quake_network::commands::ClientCommands::new(client_manager.clone());
+        let client_manager_commands = quake_network::commands::ClientCommands::new(client_manager);
         runtime.block_on(console_manager.register_commands_handler(
             quake_network::commands::ClientCommands::BUILTIN_COMMANDS,
             client_manager_commands,
@@ -125,8 +126,7 @@ impl App {
         console_manager: Arc<quake_console::ConsoleManager>,
         input_manager: Arc<quake_input::InputManager>,
     ) -> anyhow::Result<()> {
-        let input_manager_commands =
-            quake_input::commands::InputCommands::new(input_manager.clone());
+        let input_manager_commands = quake_input::commands::InputCommands::new(input_manager);
         runtime.block_on(console_manager.register_commands_handler(
             quake_input::commands::InputCommands::BUILTIN_COMMANDS,
             input_manager_commands,
@@ -147,6 +147,7 @@ impl quake_window::WindowLifecycleHandler for App {
 
         self.runtime
             .block_on(self.console_manager.append_text("exec quake.rc"));
+
         let console_manager = self.console_manager.clone();
         self.runtime
             .spawn(async move { console_manager.repl().await.unwrap() });

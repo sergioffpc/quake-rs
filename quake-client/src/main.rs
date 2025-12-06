@@ -22,6 +22,9 @@ struct Args {
 
     #[arg(long, default_value = "1080", help = "Window height")]
     height: u32,
+
+    #[arg(last = true)]
+    stuffcmds: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
