@@ -2,7 +2,7 @@ use rustyline::completion::Completer;
 use rustyline::{Context, Helper, Highlighter, Hinter, Validator};
 use std::fmt::Write;
 use tokio::sync::{Mutex, RwLock};
-use tracing::log::info;
+use tracing::log::{error, info};
 
 pub mod command;
 pub mod commands;
@@ -44,50 +44,77 @@ impl ConsoleManager {
         self.command_buffer.lock().await.push_back(text);
     }
 
+    pub async fn execute_command(
+        &self,
+        command_line: &str,
+    ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+        info!("Executing command: {}", command_line);
+        let (name, args) = self.parse_command_line(command_line);
+
+        if let Some(result) = self.try_execute_alias(name).await? {
+            return Ok(result);
+        }
+
+        if let Some(result) = self.try_execute_command_handler(name, &args).await? {
+            return Ok(result);
+        }
+
+        self.try_execute_or_set_variable(name, &args).await
+    }
+
+    async fn try_execute_alias(
+        &self,
+        name: &str,
+    ) -> anyhow::Result<Option<(String, quake_traits::ControlFlow)>> {
+        if let Some(command_line) = self.command_aliases.read().await.get(name) {
+            self.command_buffer.lock().await.push_front(command_line);
+            return Ok(Some((String::new(), quake_traits::ControlFlow::Poll)));
+        }
+        Ok(None)
+    }
+
+    async fn try_execute_command_handler(
+        &self,
+        name: &str,
+        args: &[&str],
+    ) -> anyhow::Result<Option<(String, quake_traits::ControlFlow)>> {
+        if let Some(command_handler) = self.command_registry.write().await.get_mut(name) {
+            let command_args = std::iter::once(name)
+                .chain(args.iter().copied())
+                .collect::<Vec<_>>();
+            return Ok(Some(command_handler.handle_command(&command_args).await?));
+        }
+        Ok(None)
+    }
+
+    async fn try_execute_or_set_variable(
+        &self,
+        name: &str,
+        args: &[&str],
+    ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
+        if args.is_empty() {
+            if let Some(value) = self.command_variables.read().await.get::<String>(name) {
+                return Ok((value.to_string(), quake_traits::ControlFlow::Poll));
+            }
+        } else {
+            let value = args.join(" ");
+            self.command_variables.write().await.set(name, &value);
+        }
+        Ok((String::new(), quake_traits::ControlFlow::Poll))
+    }
+
     pub async fn execute(&self) -> anyhow::Result<String> {
         let mut buffer = String::new();
         while let Some(command_line) = self.fetch_next_command().await {
-            info!("Executing command: {}", command_line);
-
-            let (name, args) = self.parse_command_line(command_line.as_str());
-
-            if let Some(command_line) = self.command_aliases.read().await.get(name) {
-                self.command_buffer.lock().await.push_front(command_line);
-                continue;
-            }
-
-            if let Some(command_handler) = self.command_registry.write().await.get_mut(name) {
-                match command_handler
-                    .handle_command(
-                        &std::iter::once(name)
-                            .chain(args.iter().copied())
-                            .collect::<Vec<_>>(),
-                    )
-                    .await?
-                {
-                    (output, control_flow) => {
-                        if !output.is_empty() {
-                            writeln!(&mut buffer, "{}", output)?;
-                        }
-                        match control_flow {
-                            quake_traits::ControlFlow::Wait => break,
-                            quake_traits::ControlFlow::Poll => continue,
-                        }
+            match self.execute_command(command_line.as_str()).await {
+                Ok((output, control_flow)) => {
+                    buffer.push_str(&output);
+                    match control_flow {
+                        quake_traits::ControlFlow::Wait => break,
+                        quake_traits::ControlFlow::Poll => continue,
                     }
                 }
-            }
-
-            if args.is_empty() {
-                self.command_variables
-                    .read()
-                    .await
-                    .get::<String>(name)
-                    .map(async |value| {
-                        writeln!(&mut buffer, "{}", value).unwrap();
-                    });
-            } else {
-                let value = args.join(" ");
-                self.command_variables.write().await.set(name, &value);
+                Err(e) => error!("Error executing command: {}", e),
             }
         }
 
@@ -127,8 +154,7 @@ impl ConsoleManager {
             let readline = rl.readline(">>> ");
             match readline {
                 Ok(line) => {
-                    self.append_text(line.as_str()).await;
-                    let output = self.execute().await?;
+                    let (output, _) = self.execute_command(line.as_str()).await?;
                     if !output.is_empty() {
                         print!("{}", output);
                     }

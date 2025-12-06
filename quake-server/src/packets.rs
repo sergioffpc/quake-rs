@@ -37,8 +37,7 @@ impl quake_network::PacketHandler for QuakeConsoleRequestHandler {
         let text = String::from_utf8_lossy(data).to_string();
         info!("Received console command: {}", text);
 
-        self.console_manager.append_text(&text).await;
-        let output = self.console_manager.execute().await?;
+        let (output, _) = self.console_manager.execute_command(text.as_str()).await?;
 
         Ok(output.into_bytes().into_boxed_slice())
     }
