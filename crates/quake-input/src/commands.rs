@@ -32,7 +32,11 @@ impl InputCommands {
                     .await
                     .map(|(k, v)| BindEntry {
                         key: k.clone(),
-                        binding: v.clone(),
+                        binding: v
+                            .clone()
+                            .split_whitespace()
+                            .collect::<Vec<&str>>()
+                            .join("; "),
                     })
                     .collect();
 
