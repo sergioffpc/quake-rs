@@ -40,8 +40,8 @@ struct Args {
     )]
     listen: String,
 
-    #[arg(last = true)]
-    stuffcmds: Option<String>,
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    stuffcmds: Vec<String>,
 }
 
 fn main() -> anyhow::Result<()> {

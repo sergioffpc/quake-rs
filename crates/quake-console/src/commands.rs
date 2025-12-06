@@ -34,9 +34,11 @@ impl ConsoleCommands {
         }
     }
 
-    pub fn set_stuffcmds(&mut self, stuffcmds: &str) {
+    pub fn extend_stuffcmds(&mut self, stuffcmds: Vec<String>) {
         let mut result = Vec::new();
-        let mut iter = stuffcmds.split_whitespace().peekable();
+
+        let stuffcmds_str = stuffcmds.join(" ");
+        let mut iter = stuffcmds_str.split_whitespace().peekable();
 
         while let Some(token) = iter.next() {
             if let Some(cmd) = token.strip_prefix('+') {
@@ -55,7 +57,7 @@ impl ConsoleCommands {
             }
         }
 
-        self.stuffcmds = result.join("\n");
+        self.stuffcmds = format!("{}\n{}", self.stuffcmds, result.join("\n"));
     }
 
     async fn alias(&self, args: &[&str]) -> anyhow::Result<(String, quake_traits::ControlFlow)> {

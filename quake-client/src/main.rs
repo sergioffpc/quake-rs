@@ -23,8 +23,8 @@ struct Args {
     #[arg(long, default_value = "1080", help = "Window height")]
     height: u32,
 
-    #[arg(last = true)]
-    stuffcmds: Option<String>,
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    stuffcmds: Vec<String>,
 }
 
 fn main() -> anyhow::Result<()> {

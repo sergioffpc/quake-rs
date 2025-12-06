@@ -40,7 +40,7 @@ impl App {
             &runtime,
             console_manager.clone(),
             resources_manager.clone(),
-            &args.stuffcmds.unwrap_or_default(),
+            args.stuffcmds,
         )?;
         Self::register_resources_commands(
             &runtime,
@@ -68,13 +68,13 @@ impl App {
         runtime: &Runtime,
         console_manager: Arc<quake_console::ConsoleManager>,
         resources_manager: Arc<quake_resources::ResourcesManager>,
-        stuffcmds: &str,
+        stuffcmds: Vec<String>,
     ) -> anyhow::Result<()> {
         let mut console_manager_commands = quake_console::commands::ConsoleCommands::new(
             console_manager.clone(),
             resources_manager,
         );
-        console_manager_commands.set_stuffcmds(stuffcmds);
+        console_manager_commands.extend_stuffcmds(stuffcmds);
 
         runtime.block_on(console_manager.register_commands_handler(
             quake_console::commands::ConsoleCommands::BUILTIN_COMMANDS,
