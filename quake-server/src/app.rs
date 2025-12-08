@@ -1,5 +1,5 @@
 use crate::Args;
-use crate::stream::QuakeStreamHandlerBuilder;
+use crate::stream::ServerStreamHandlerBuilder;
 use std::fs::File;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -76,7 +76,7 @@ impl App {
             console_manager.clone(),
             resources_manager.clone(),
         )?;
-        Self::register_server_commands(&runtime, console_manager.clone(), server_manager.clone())?;
+        Self::register_network_commands(&runtime, console_manager.clone(), server_manager.clone())?;
 
         Ok(Self {
             runtime,
@@ -124,7 +124,8 @@ impl App {
 
     fn accept_loop(&self) -> anyhow::Result<JoinHandle<()>> {
         let server_manager = self.server_manager.clone();
-        let stream_handler_builder = QuakeStreamHandlerBuilder::new(self.resources_manager.clone());
+        let stream_handler_builder =
+            ServerStreamHandlerBuilder::new(self.resources_manager.clone());
 
         Ok(self.runtime.spawn(async move {
             if let Err(e) = server_manager.accept(stream_handler_builder).await {
@@ -164,7 +165,7 @@ impl App {
         ))
     }
 
-    fn register_server_commands(
+    fn register_network_commands(
         runtime: &Runtime,
         console_manager: Arc<quake_console::ConsoleManager>,
         server_manager: Arc<quake_network::server::ServerManager>,

@@ -1,4 +1,5 @@
 use crate::Args;
+use crate::v3::protocol::{BadPacketHandler, DisconnectPacketHandler, NopPacketHandler};
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
@@ -53,7 +54,7 @@ impl App {
             resources_manager.clone(),
             audio_manager.clone(),
         )?;
-        Self::register_client_commands(&runtime, console_manager.clone(), client_manager.clone())?;
+        Self::register_network_commands(&runtime, console_manager.clone(), client_manager.clone())?;
         Self::register_input_commands(&runtime, console_manager.clone(), input_manager.clone())?;
 
         Ok(Self {
@@ -62,6 +63,26 @@ impl App {
             input_manager,
             render_manager: None,
         })
+    }
+
+    fn build_packet_dispatcher(
+        console_manager: Arc<quake_console::ConsoleManager>,
+    ) -> quake_network::PacketDispatcher {
+        let mut packet_dispatcher = quake_network::PacketDispatcher::default();
+        packet_dispatcher.register_handler(
+            BadPacketHandler::OPCODE,
+            Box::new(BadPacketHandler::default()),
+        );
+        packet_dispatcher.register_handler(
+            NopPacketHandler::OPCODE,
+            Box::new(NopPacketHandler::default()),
+        );
+        packet_dispatcher.register_handler(
+            DisconnectPacketHandler::OPCODE,
+            Box::new(DisconnectPacketHandler::new(console_manager)),
+        );
+
+        packet_dispatcher
     }
 
     fn register_console_commands(
@@ -109,7 +130,7 @@ impl App {
         ))
     }
 
-    fn register_client_commands(
+    fn register_network_commands(
         runtime: &Runtime,
         console_manager: Arc<quake_console::ConsoleManager>,
         client_manager: Arc<Mutex<quake_network::client::ClientManager>>,

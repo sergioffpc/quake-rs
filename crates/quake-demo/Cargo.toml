@@ -1,0 +1,14 @@
+[package]
+name = "quake-demo"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+quake-console = { path = "../quake-console" }
+quake-network = { path = "../quake-network" }
+quake-resources = { path = "../quake-resources" }
+
+anyhow.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tracing.workspace = true

@@ -1,5 +1,7 @@
 use crate::bsp::MipTexture::BspTexture;
-use crate::{BoundingVolume, read_f32_bounding_box, read_i16_bounding_box};
+use crate::{
+    BoundingVolume, read_f32_bounding_box, read_i16_bounding_box, read_null_terminated_string,
+};
 use nom::Parser;
 use nom::bytes::complete::take_while;
 use nom::character::complete::{char, multispace0};
@@ -440,23 +442,6 @@ where
         reader.read_f32_le().await?,
     ]
     .into())
-}
-
-async fn read_null_terminated_string<R>(
-    reader: &mut R,
-    buffer_size: usize,
-) -> anyhow::Result<String>
-where
-    R: AsyncReadExt + Unpin + Send,
-{
-    let mut name_buffer = vec![0u8; buffer_size];
-    reader.read_exact(&mut name_buffer).await?;
-    let null_terminated_bytes: Vec<u8> = name_buffer
-        .iter()
-        .take_while(|&byte| *byte != 0)
-        .copied()
-        .collect();
-    Ok(String::from_utf8_lossy(&null_terminated_bytes).to_string())
 }
 
 #[derive(Clone, Debug)]

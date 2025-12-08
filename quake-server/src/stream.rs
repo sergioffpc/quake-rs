@@ -1,33 +1,33 @@
-use crate::packets::{QuakeConnectionRequestHandler, QuakeConsoleRequestHandler};
+use crate::v3::protocol::ConsolePacketHandler;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::log::error;
 
 #[derive(Clone)]
-pub struct QuakeStreamHandlerBuilder {
+pub struct ServerStreamHandlerBuilder {
     resources_manager: Arc<quake_resources::ResourcesManager>,
 }
 
-impl QuakeStreamHandlerBuilder {
+impl ServerStreamHandlerBuilder {
     pub fn new(resources_manager: Arc<quake_resources::ResourcesManager>) -> Self {
         Self { resources_manager }
     }
 }
 
 #[async_trait::async_trait]
-impl quake_network::StreamHandlerBuilder for QuakeStreamHandlerBuilder {
+impl quake_network::StreamHandlerBuilder for ServerStreamHandlerBuilder {
     async fn build(&self) -> anyhow::Result<Box<dyn quake_network::StreamHandler>> {
         Ok(Box::new(
-            QuakeStream::new(self.resources_manager.clone()).await?,
+            ServerStream::new(self.resources_manager.clone()).await?,
         ))
     }
 }
 
-pub struct QuakeStream {
+pub struct ServerStream {
     packet_dispatcher: Arc<quake_network::PacketDispatcher>,
 }
 
-impl QuakeStream {
+impl ServerStream {
     pub async fn new(
         resources_manager: Arc<quake_resources::ResourcesManager>,
     ) -> anyhow::Result<Self> {
@@ -39,12 +39,8 @@ impl QuakeStream {
 
         let mut packet_dispatcher = quake_network::PacketDispatcher::default();
         packet_dispatcher.register_handler(
-            QuakeConnectionRequestHandler::OPCODE,
-            Box::new(QuakeConnectionRequestHandler),
-        );
-        packet_dispatcher.register_handler(
-            QuakeConsoleRequestHandler::OPCODE,
-            Box::new(QuakeConsoleRequestHandler::new(console_manager.clone())),
+            ConsolePacketHandler::OPCODE,
+            Box::new(ConsolePacketHandler::new(console_manager.clone())),
         );
 
         Ok(Self {
@@ -84,7 +80,7 @@ impl QuakeStream {
 }
 
 #[async_trait::async_trait]
-impl quake_network::StreamHandler for QuakeStream {
+impl quake_network::StreamHandler for ServerStream {
     async fn handle_stream(
         &self,
         sender: &mut (dyn AsyncWrite + Unpin + Send),

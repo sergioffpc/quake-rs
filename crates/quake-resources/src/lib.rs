@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 
 pub mod bsp;
 pub mod commands;
+pub mod dem;
 pub mod mdl;
 
 mod pak;
@@ -414,4 +415,19 @@ where
         .copied()
         .collect();
     Ok(String::from_utf8_lossy(&null_terminated_bytes).to_string())
+}
+
+pub async fn read_string<R>(reader: &mut R) -> anyhow::Result<String>
+where
+    R: AsyncReadExt + Unpin + Send,
+{
+    let mut buffer = Vec::new();
+    loop {
+        match reader.read_u8().await {
+            Ok(byte) if byte == b'\n' => break,
+            Ok(byte) => buffer.push(byte),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(String::from_utf8(buffer)?)
 }

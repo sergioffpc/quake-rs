@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/quake-audio",
     "crates/quake-console",
+    "crates/quake-demo",
     "crates/quake-entity",
     "crates/quake-input",
     "crates/quake-network",
