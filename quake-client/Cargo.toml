@@ -7,11 +7,11 @@ edition.workspace = true
 [dependencies]
 quake-audio = { path = "../crates/quake-audio" }
 quake-console = { path = "../crates/quake-console" }
+quake-demo = { path = "../crates/quake-demo" }
 quake-input = { path = "../crates/quake-input" }
 quake-network = { path = "../crates/quake-network" }
 quake-render = { path = "../crates/quake-render" }
 quake-resources = { path = "../crates/quake-resources" }
-quake-traits = { path = "../crates/quake-traits" }
 quake-window = { path = "../crates/quake-window" }
 
 anyhow.workspace = true
@@ -19,5 +19,6 @@ async-trait.workspace = true
 clap.workspace = true
 rustls.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 tracing-subscriber.workspace = true
 

@@ -7,6 +7,7 @@ edition.workspace = true
 quake-console = { path = "../quake-console" }
 quake-network = { path = "../quake-network" }
 quake-resources = { path = "../quake-resources" }
+quake-traits = { path = "../quake-traits" }
 
 anyhow.workspace = true
 async-trait.workspace = true

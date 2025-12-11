@@ -1,5 +1,5 @@
-use crate::Args;
-use crate::v3::protocol::{BadPacketHandler, DisconnectPacketHandler, NopPacketHandler};
+use crate::{Args, v3};
+use quake_demo::DemoManager;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
@@ -32,10 +32,17 @@ impl App {
             )
         });
         let audio_manager = Arc::new(quake_audio::AudioManager::new()?);
-        let client_manager = Arc::new(Mutex::new(
-            runtime.block_on(quake_network::client::ClientManager::new(args.ca_path))?,
-        ));
+        let packet_dispatcher = Arc::new(Mutex::new(Self::build_packet_dispatcher(
+            console_manager.clone(),
+        )));
+        let client_manager = Arc::new(Mutex::new(runtime.block_on(
+            quake_network::client::ClientManager::new(Some(args.ca_path), packet_dispatcher),
+        )?));
         let input_manager = Arc::new(quake_input::InputManager::default());
+        let demo_manager = Arc::new(runtime.block_on(DemoManager::new(
+            console_manager.clone(),
+            resources_manager.clone(),
+        ))?);
 
         Self::register_console_commands(
             &runtime,
@@ -54,8 +61,9 @@ impl App {
             resources_manager.clone(),
             audio_manager.clone(),
         )?;
-        Self::register_network_commands(&runtime, console_manager.clone(), client_manager.clone())?;
+        Self::register_network_commands(&runtime, console_manager.clone(), client_manager)?;
         Self::register_input_commands(&runtime, console_manager.clone(), input_manager.clone())?;
+        Self::register_demo_commands(&runtime, console_manager.clone(), demo_manager)?;
 
         Ok(Self {
             runtime,
@@ -70,16 +78,144 @@ impl App {
     ) -> quake_network::PacketDispatcher {
         let mut packet_dispatcher = quake_network::PacketDispatcher::default();
         packet_dispatcher.register_handler(
-            BadPacketHandler::OPCODE,
-            Box::new(BadPacketHandler::default()),
+            v3::protocol::BadPacketHandler::OPCODE,
+            Box::new(v3::protocol::BadPacketHandler),
         );
         packet_dispatcher.register_handler(
-            NopPacketHandler::OPCODE,
-            Box::new(NopPacketHandler::default()),
+            v3::protocol::NopPacketHandler::OPCODE,
+            Box::new(v3::protocol::NopPacketHandler),
         );
         packet_dispatcher.register_handler(
-            DisconnectPacketHandler::OPCODE,
-            Box::new(DisconnectPacketHandler::new(console_manager)),
+            v3::protocol::DisconnectPacketHandler::OPCODE,
+            Box::new(v3::protocol::DisconnectPacketHandler::new(console_manager)),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::UpdateStatPacketHandler::OPCODE,
+            Box::new(v3::protocol::UpdateStatPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::VersionPacketHandler::OPCODE,
+            Box::new(v3::protocol::VersionPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SetViewPacketHandler::OPCODE,
+            Box::new(v3::protocol::SetViewPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SoundPacketHandler::OPCODE,
+            Box::new(v3::protocol::SoundPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::TimePacketHandler::OPCODE,
+            Box::new(v3::protocol::TimePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::PrintPacketHandler::OPCODE,
+            Box::new(v3::protocol::PrintPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::StuffTextPacketHandler::OPCODE,
+            Box::new(v3::protocol::StuffTextPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SetAnglePacketHandler::OPCODE,
+            Box::new(v3::protocol::SetAnglePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::ServerInfoPacketHandler::OPCODE,
+            Box::new(v3::protocol::ServerInfoPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::LightStylePacketHandler::OPCODE,
+            Box::new(v3::protocol::LightStylePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::UpdateNamePacketHandler::OPCODE,
+            Box::new(v3::protocol::UpdateNamePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::UpdateFragsPacketHandler::OPCODE,
+            Box::new(v3::protocol::UpdateFragsPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::ClientDataPacketHandler::OPCODE,
+            Box::new(v3::protocol::ClientDataPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::StopSoundPacketHandler::OPCODE,
+            Box::new(v3::protocol::StopSoundPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::UpdateColorsPacketHandler::OPCODE,
+            Box::new(v3::protocol::UpdateColorsPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::ParticlePacketHandler::OPCODE,
+            Box::new(v3::protocol::ParticlePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::DamagePacketHandler::OPCODE,
+            Box::new(v3::protocol::DamagePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SpawnStaticPacketHandler::OPCODE,
+            Box::new(v3::protocol::SpawnStaticPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SpawnBinaryPacketHandler::OPCODE,
+            Box::new(v3::protocol::SpawnBinaryPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SpawnBaselinePacketHandler::OPCODE,
+            Box::new(v3::protocol::SpawnBaselinePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::TempEntityPacketHandler::OPCODE,
+            Box::new(v3::protocol::TempEntityPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SetPausePacketHandler::OPCODE,
+            Box::new(v3::protocol::SetPausePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SignOnNumPacketHandler::OPCODE,
+            Box::new(v3::protocol::SignOnNumPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::CenterPrintPacketHandler::OPCODE,
+            Box::new(v3::protocol::CenterPrintPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::KilledMonsterPacketHandler::OPCODE,
+            Box::new(v3::protocol::KilledMonsterPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::FoundSecretPacketHandler::OPCODE,
+            Box::new(v3::protocol::FoundSecretPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SpawnStaticSoundPacketHandler::OPCODE,
+            Box::new(v3::protocol::SpawnStaticSoundPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::InterMissionPacketHandler::OPCODE,
+            Box::new(v3::protocol::InterMissionPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::FinalePacketHandler::OPCODE,
+            Box::new(v3::protocol::FinalePacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::CdTrackPacketHandler::OPCODE,
+            Box::new(v3::protocol::CdTrackPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::SellScreenPacketHandler::OPCODE,
+            Box::new(v3::protocol::SellScreenPacketHandler),
+        );
+        packet_dispatcher.register_handler(
+            v3::protocol::UpdateEntityPacketHandler::OPCODE,
+            Box::new(v3::protocol::UpdateEntityPacketHandler),
         );
 
         packet_dispatcher
@@ -151,6 +287,19 @@ impl App {
         runtime.block_on(console_manager.register_commands_handler(
             quake_input::commands::InputCommands::BUILTIN_COMMANDS,
             input_manager_commands,
+        ))
+    }
+
+    fn register_demo_commands(
+        runtime: &Runtime,
+        console_manager: Arc<quake_console::ConsoleManager>,
+        demo_manager: Arc<DemoManager>,
+    ) -> anyhow::Result<()> {
+        let demo_manager_commands =
+            quake_demo::commands::DemoCommands::new(console_manager.clone(), demo_manager);
+        runtime.block_on(console_manager.register_commands_handler(
+            quake_demo::commands::DemoCommands::BUILTIN_COMMANDS,
+            demo_manager_commands,
         ))
     }
 }

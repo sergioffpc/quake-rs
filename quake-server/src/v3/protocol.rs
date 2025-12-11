@@ -1,6 +1,25 @@
 use std::sync::Arc;
 use tracing::log::info;
 
+pub struct ConnectPacketHandler;
+
+impl ConnectPacketHandler {
+    pub const OPCODE: u8 = 0x01;
+}
+
+#[async_trait::async_trait]
+impl quake_network::PacketHandler for ConnectPacketHandler {
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received connect packet");
+
+        if data != b"QUAKE\x03" {
+            return Err(anyhow::anyhow!("Invalid protocol version"));
+        }
+
+        Ok(b"OK".to_vec().into_boxed_slice())
+    }
+}
+
 pub struct ConsolePacketHandler {
     console_manager: Arc<quake_console::ConsoleManager>,
 }
@@ -15,12 +34,12 @@ impl ConsolePacketHandler {
 
 #[async_trait::async_trait]
 impl quake_network::PacketHandler for ConsolePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
         let text = String::from_utf8_lossy(data).to_string();
-        info!("Received console command: {}", text);
+        info!("Received console packet: {}", text);
 
-        let (output, _) = self.console_manager.execute_command(text.as_str()).await?;
+        self.console_manager.append_text(text.as_str()).await;
 
-        Ok(output.into_bytes().into_boxed_slice())
+        Ok(b"OK".to_vec().into_boxed_slice())
     }
 }

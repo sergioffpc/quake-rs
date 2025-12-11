@@ -11,8 +11,7 @@ pub struct ClientCommands {
 }
 
 impl ClientCommands {
-    pub const BUILTIN_COMMANDS: &'static [&'static str] =
-        &["connect", "disconnect", "reconnect", "rexec"];
+    pub const BUILTIN_COMMANDS: &'static [&'static str] = &["connect", "disconnect", "reconnect"];
 
     pub fn new(client_manager: Arc<Mutex<ClientManager>>) -> Self {
         Self { client_manager }
@@ -50,20 +49,6 @@ impl ClientCommands {
         self.client_manager.lock().await.reconnect().await?;
         Ok((String::default(), quake_traits::ControlFlow::Poll))
     }
-
-    async fn rexec(
-        &mut self,
-        args: &[&str],
-    ) -> anyhow::Result<(String, quake_traits::ControlFlow)> {
-        let message = args.join(" ");
-        let (mut tx, mut rx) = self.client_manager.lock().await.open_stream().await?;
-        tx.write(format!("\x04{message}").as_bytes()).await?;
-        tx.finish()?;
-
-        let output = rx.read_to_end(usize::MAX).await?;
-
-        Ok((String::from_utf8(output)?, quake_traits::ControlFlow::Poll))
-    }
 }
 
 #[async_trait::async_trait]
@@ -76,7 +61,6 @@ impl quake_traits::CommandHandler for ClientCommands {
             "connect" => self.connect(&command[1..]).await,
             "disconnect" => self.disconnect().await,
             "reconnect" => self.reconnect().await,
-            "rexec" => self.rexec(&command[1..]).await,
             _ => Ok((String::default(), quake_traits::ControlFlow::Poll)),
         }
     }

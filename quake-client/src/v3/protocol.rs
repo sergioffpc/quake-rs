@@ -1,8 +1,8 @@
 use quake_console::ConsoleManager;
 use quake_network::PacketHandler;
 use std::sync::Arc;
+use tracing::log::info;
 
-#[derive(Default)]
 pub struct BadPacketHandler;
 impl BadPacketHandler {
     pub const OPCODE: u8 = 0x00;
@@ -10,12 +10,13 @@ impl BadPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for BadPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received bad packet");
+
         Err(anyhow::anyhow!("Bad packet"))
     }
 }
 
-#[derive(Default)]
 pub struct NopPacketHandler;
 impl NopPacketHandler {
     pub const OPCODE: u8 = 0x01;
@@ -23,7 +24,9 @@ impl NopPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for NopPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received nop packet");
+
         Ok(vec![].into_boxed_slice())
     }
 }
@@ -42,7 +45,9 @@ impl DisconnectPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for DisconnectPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received disconnect packet");
+
         self.console_manager.append_text("disconnect").await;
 
         Ok(vec![].into_boxed_slice())
@@ -56,8 +61,10 @@ impl UpdateStatPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for UpdateStatPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received update stat packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -68,8 +75,10 @@ impl VersionPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for VersionPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received version packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -80,8 +89,10 @@ impl SetViewPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SetViewPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received set view packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -92,8 +103,10 @@ impl SoundPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SoundPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received sound packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -104,8 +117,10 @@ impl TimePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for TimePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received time packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -116,8 +131,10 @@ impl PrintPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for PrintPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received print packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -128,8 +145,10 @@ impl StuffTextPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for StuffTextPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received stuff text packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -140,8 +159,10 @@ impl SetAnglePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SetAnglePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received set angle packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -152,8 +173,10 @@ impl ServerInfoPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for ServerInfoPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received server info packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -164,8 +187,10 @@ impl LightStylePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for LightStylePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received light style packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -176,8 +201,10 @@ impl UpdateNamePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for UpdateNamePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received update name packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -188,8 +215,10 @@ impl UpdateFragsPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for UpdateFragsPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received update frags packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 pub struct ClientDataPacketHandler;
@@ -199,8 +228,10 @@ impl ClientDataPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for ClientDataPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received client data packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -211,8 +242,10 @@ impl StopSoundPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for StopSoundPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received stop sound packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 pub struct UpdateColorsPacketHandler;
@@ -222,8 +255,10 @@ impl UpdateColorsPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for UpdateColorsPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received update colors packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -234,8 +269,10 @@ impl ParticlePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for ParticlePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received particle packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -246,8 +283,10 @@ impl DamagePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for DamagePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received damage packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 pub struct SpawnStaticPacketHandler;
@@ -257,8 +296,10 @@ impl SpawnStaticPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SpawnStaticPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received spawn static packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -269,7 +310,7 @@ impl SpawnBinaryPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SpawnBinaryPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
         unimplemented!("This packet is deprecated and should not be used")
     }
 }
@@ -281,8 +322,10 @@ impl SpawnBaselinePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SpawnBaselinePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received spawn baseline packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -293,8 +336,10 @@ impl TempEntityPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for TempEntityPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received temp entity packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -305,8 +350,10 @@ impl SetPausePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SetPausePacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received set pause packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -317,8 +364,10 @@ impl SignOnNumPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SignOnNumPacketHandler {
-    async fn handle(&self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received sign on num packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -329,8 +378,10 @@ impl CenterPrintPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for CenterPrintPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received center print packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -341,8 +392,10 @@ impl KilledMonsterPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for KilledMonsterPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received killed monster packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -353,8 +406,10 @@ impl FoundSecretPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for FoundSecretPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received found secret packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -365,8 +420,10 @@ impl SpawnStaticSoundPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SpawnStaticSoundPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received spawn static sound packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -377,8 +434,10 @@ impl InterMissionPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for InterMissionPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received inter mission packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -389,8 +448,10 @@ impl FinalePacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for FinalePacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received finale packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -401,8 +462,10 @@ impl CdTrackPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for CdTrackPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received cd track packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -413,8 +476,10 @@ impl SellScreenPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for SellScreenPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received sell screen packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }
 
@@ -425,7 +490,9 @@ impl UpdateEntityPacketHandler {
 
 #[async_trait::async_trait]
 impl PacketHandler for UpdateEntityPacketHandler {
-    async fn handle(&self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
-        todo!()
+    async fn handle(&mut self, _data: &[u8]) -> anyhow::Result<Box<[u8]>> {
+        info!("Received update entity packet");
+
+        Ok(vec![].into_boxed_slice())
     }
 }

@@ -1,10 +1,9 @@
-use crate::{StreamHandler, StreamHandlerBuilder};
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use crate::PacketDispatcher;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tabled::Tabled;
-use tokio::sync::broadcast;
+use tokio::sync::{Mutex, broadcast};
 use tracing::instrument;
 use tracing::log::{error, info, warn};
 
@@ -27,14 +26,17 @@ pub struct ServerManager {
 impl ServerManager {
     pub async fn new<P>(
         address: SocketAddr,
-        cert_path: P,
-        key_path: P,
+        cert_path: Option<P>,
+        key_path: Option<P>,
         console_manager: Arc<quake_console::ConsoleManager>,
     ) -> anyhow::Result<Self>
     where
         P: AsRef<std::path::Path>,
     {
-        let (cert_der, cert_key) = Self::load_cert(cert_path, key_path)?;
+        let (cert_der, cert_key) = match (cert_path, key_path) {
+            (Some(cert_path), Some(key_path)) => Self::load_cert(cert_path, key_path)?,
+            _ => Self::generate_self_signed_cert()?,
+        };
         let mut server_config = quinn::ServerConfig::with_single_cert(vec![cert_der], cert_key)?;
 
         let mut transport_config = quinn::TransportConfig::default();
@@ -65,10 +67,10 @@ impl ServerManager {
         })
     }
 
-    pub async fn accept<B>(&self, builder: B) -> anyhow::Result<()>
-    where
-        B: StreamHandlerBuilder,
-    {
+    pub async fn accept(
+        &self,
+        packet_dispatcher: Arc<Mutex<PacketDispatcher>>,
+    ) -> anyhow::Result<()> {
         while let Some(incoming) = self.endpoint.accept().await {
             let net_max_connections = self
                 .console_manager
@@ -81,15 +83,14 @@ impl ServerManager {
             }
 
             let broadcast_receiver = self.broadcast_sender.subscribe();
-            let stream_handler = builder.build().await?;
-
+            let packet_dispatcher = packet_dispatcher.clone();
             tokio::spawn(async move {
                 match incoming.await {
                     Ok(connection) => {
                         let remote_addr = connection.remote_address();
                         info!("Incoming connection from {}", remote_addr);
 
-                        Self::handle_connection(connection, broadcast_receiver, stream_handler)
+                        Self::handle_connection(connection, broadcast_receiver, packet_dispatcher)
                             .await
                             .unwrap();
                     }
@@ -98,6 +99,11 @@ impl ServerManager {
             });
         }
 
+        Ok(())
+    }
+
+    pub fn close(&self) -> anyhow::Result<()> {
+        self.endpoint.close(0u32.into(), b"Server closing");
         Ok(())
     }
 
@@ -121,7 +127,7 @@ impl ServerManager {
     async fn handle_connection(
         connection: quinn::Connection,
         mut broadcast_receiver: broadcast::Receiver<Vec<u8>>,
-        stream_handler: Box<dyn StreamHandler>,
+        packet_dispatcher: Arc<Mutex<PacketDispatcher>>,
     ) -> anyhow::Result<()> {
         loop {
             tokio::select! {
@@ -129,7 +135,7 @@ impl ServerManager {
                 result = connection.accept_bi() => {
                     match result {
                         Ok((mut sender, mut receiver)) => {
-                            stream_handler.handle_stream(&mut sender, &mut receiver).await;
+                            Self::handle_stream(&mut sender, &mut receiver, packet_dispatcher.clone()).await;
                         }
                         Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
                             info!("Connection closed");
@@ -168,10 +174,37 @@ impl ServerManager {
         Ok(())
     }
 
+    async fn handle_stream(
+        sender: &mut quinn::SendStream,
+        receiver: &mut quinn::RecvStream,
+        packet_dispatcher: Arc<Mutex<PacketDispatcher>>,
+    ) {
+        match receiver.read_to_end(usize::MAX).await {
+            Ok(data) => match packet_dispatcher.lock().await.dispatch(&data).await {
+                Ok(response) => {
+                    if !response.is_empty() {
+                        if let Err(e) = sender.write_all(&response).await {
+                            error!("Error writing response: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Error handling request: {}", e);
+                }
+            },
+            Err(e) => {
+                error!("Error reading incoming stream: {}", e);
+            }
+        }
+    }
+
     fn load_cert<P>(
         cert_path: P,
         key_path: P,
-    ) -> anyhow::Result<(CertificateDer<'static>, PrivateKeyDer<'static>)>
+    ) -> anyhow::Result<(
+        rustls::pki_types::CertificateDer<'static>,
+        rustls::pki_types::PrivateKeyDer<'static>,
+    )>
     where
         P: AsRef<std::path::Path>,
     {
@@ -201,5 +234,24 @@ impl ServerManager {
             quinn::rustls::pki_types::CertificateDer::from(cert_der),
             quinn::rustls::pki_types::PrivateKeyDer::from(key_der),
         ))
+    }
+
+    fn generate_self_signed_cert() -> anyhow::Result<(
+        rustls::pki_types::CertificateDer<'static>,
+        rustls::pki_types::PrivateKeyDer<'static>,
+    )> {
+        let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+        let cert = rcgen::generate_simple_self_signed(subject_alt_names)?;
+
+        let cert_der = cert.cert.der();
+        let key_der = cert.signing_key.serialize_der();
+
+        let rustls_cert = rustls::pki_types::CertificateDer::from(cert_der.clone());
+        let rustls_key = rustls::pki_types::PrivateKeyDer::Pkcs8(
+            rustls::pki_types::PrivatePkcs8KeyDer::from(key_der),
+        );
+
+        info!("Generated self-signed certificate");
+        Ok((rustls_cert, rustls_key))
     }
 }

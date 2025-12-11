@@ -1,8 +1,9 @@
 use crate::Args;
-use crate::stream::ServerStreamHandlerBuilder;
+use crate::v3::protocol::{ConnectPacketHandler, ConsolePacketHandler};
 use std::fs::File;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::log::{error, info};
 
@@ -35,7 +36,6 @@ pub fn run_app(args: Args) -> anyhow::Result<()> {
 struct App {
     runtime: Runtime,
     console_manager: Arc<quake_console::ConsoleManager>,
-    resources_manager: Arc<quake_resources::ResourcesManager>,
     server_manager: Arc<quake_network::server::ServerManager>,
 }
 
@@ -56,8 +56,8 @@ impl App {
             Arc::new(
                 quake_network::server::ServerManager::new(
                     args.listen.parse().unwrap(),
-                    args.cert_path,
-                    args.key_path,
+                    Some(args.cert_path),
+                    Some(args.key_path),
                     console_manager.clone(),
                 )
                 .await
@@ -81,7 +81,6 @@ impl App {
         Ok(Self {
             runtime,
             console_manager,
-            resources_manager,
             server_manager,
         })
     }
@@ -100,9 +99,10 @@ impl App {
 
     fn tick_loop(&self) -> anyhow::Result<JoinHandle<()>> {
         let console_manager = self.console_manager.clone();
-
         Ok(self.runtime.spawn(async move {
             loop {
+                console_manager.execute().await.unwrap();
+
                 let sys_tick_rate = console_manager
                     .get::<f32>("sys.tick.rate")
                     .await
@@ -123,12 +123,22 @@ impl App {
     }
 
     fn accept_loop(&self) -> anyhow::Result<JoinHandle<()>> {
+        let console_manager = self.console_manager.clone();
         let server_manager = self.server_manager.clone();
-        let stream_handler_builder =
-            ServerStreamHandlerBuilder::new(self.resources_manager.clone());
 
         Ok(self.runtime.spawn(async move {
-            if let Err(e) = server_manager.accept(stream_handler_builder).await {
+            let mut packet_dispatcher = quake_network::PacketDispatcher::default();
+            packet_dispatcher
+                .register_handler(ConnectPacketHandler::OPCODE, Box::new(ConnectPacketHandler));
+            packet_dispatcher.register_handler(
+                ConsolePacketHandler::OPCODE,
+                Box::new(ConsolePacketHandler::new(console_manager.clone())),
+            );
+
+            if let Err(e) = server_manager
+                .accept(Arc::new(Mutex::new(packet_dispatcher)))
+                .await
+            {
                 error!("Error accepting connections: {}", e);
             }
         }))

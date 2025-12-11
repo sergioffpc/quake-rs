@@ -154,6 +154,10 @@ impl ConsoleManager {
             let readline = rl.readline(">>> ");
             match readline {
                 Ok(line) => {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+
                     let (output, _) = self.execute_command(line.as_str()).await?;
                     if !output.is_empty() {
                         print!("{}", output);

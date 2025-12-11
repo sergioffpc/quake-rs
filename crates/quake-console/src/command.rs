@@ -55,10 +55,11 @@ impl CommandBuffer {
 
     fn process_lines<'a>(&self, text: &'a str) -> impl Iterator<Item = String> + 'a {
         text.lines()
+            .flat_map(|line| line.split(";"))
             .map(|line| {
                 let trimmed = line.trim();
-                if let Some(comment_position) = trimmed.find("//") {
-                    line[..comment_position].trim().to_string()
+                if let Some(pos) = trimmed.find("//") {
+                    trimmed[..pos].trim().to_string()
                 } else {
                     trimmed.to_string()
                 }

@@ -15,24 +15,29 @@ impl Dem {
 
         let mut blocks = Vec::new();
         loop {
-            let block_size = reader.read_u32_le().await?;
-            if block_size == 0 {
-                break;
-            }
-            let angles = read_f32_vector3(&mut reader).await?;
-            let mut message_buffer = vec![0u8; block_size as usize];
-            reader.read_exact(&mut message_buffer).await?;
+            match reader.read_u32_le().await {
+                Ok(block_size) if block_size > 0 => {
+                    let angles = read_f32_vector3(&mut reader).await?;
+                    let mut messages = vec![0u8; block_size as usize];
+                    reader.read_exact(&mut messages).await?;
 
-            blocks.push(Block {
-                angles,
-                messages: message_buffer.into_boxed_slice(),
-            });
+                    blocks.push(Block { angles, messages });
+                }
+                _ => break,
+            }
         }
 
         Ok(Self {
             track,
             blocks: blocks.into_boxed_slice(),
         })
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = Block> {
+        DemIterator {
+            blocks: self.blocks,
+            index: 0,
+        }
     }
 }
 
@@ -43,7 +48,27 @@ impl quake_traits::FromBytes for Dem {
     }
 }
 
-struct Block {
-    angles: glam::Vec3,
-    messages: Box<[u8]>,
+#[derive(Clone, Debug)]
+pub struct Block {
+    pub angles: glam::Vec3,
+    pub messages: Vec<u8>,
+}
+
+struct DemIterator {
+    blocks: Box<[Block]>,
+    index: usize,
+}
+
+impl Iterator for DemIterator {
+    type Item = Block;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.blocks.len() {
+            None
+        } else {
+            let block = self.blocks[self.index].clone();
+            self.index += 1;
+            Some(block)
+        }
+    }
 }
