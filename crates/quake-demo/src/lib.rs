@@ -39,9 +39,10 @@ impl DemoManager {
     {
         let server_manager = self.server_manager.clone();
 
+        let dem_path = format!("{}.dem", path.as_ref().to_str().unwrap());
         let iter = self
             .resources_manager
-            .by_name::<quake_resources::dem::Dem>(path.as_ref().to_str().unwrap())
+            .by_name::<quake_resources::dem::Dem>(dem_path.as_str())
             .await?
             .into_iter();
 
@@ -51,9 +52,14 @@ impl DemoManager {
             Box::new(v3::protocol::DemoPacketHandler::new(iter)),
         );
 
-        server_manager
-            .accept(Arc::new(Mutex::new(packet_dispatcher)))
-            .await
+        tokio::spawn(async move {
+            server_manager
+                .accept(Arc::new(Mutex::new(packet_dispatcher)))
+                .await
+                .unwrap();
+        });
+
+        Ok(())
     }
 
     pub async fn stop(&self) -> anyhow::Result<()> {
