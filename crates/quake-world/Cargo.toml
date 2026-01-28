@@ -1,0 +1,16 @@
+[package]
+name = "quake-world"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+quake-asset = { path = "../quake-asset" }
+quake-network = { path = "../quake-network" }
+
+anyhow.workspace = true
+
+legion = "0.4.0"
+serde = { version = "1.0.228", features = ["derive"] }
+tracing = "0.1.44"
+glam = "0.30.10"

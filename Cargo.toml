@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/quake-asset",
+    "crates/quake-audio",
+    "crates/quake-network",
+    "crates/quake-input",
+    "crates/quake-render",
+    "crates/quake-world",
+    "quake-client",
+    "quake-server"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["Sérgio Carvalho sergioffpc@gmail.com"]
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+winit = "0.30.12"

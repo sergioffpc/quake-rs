@@ -1,0 +1,18 @@
+[package]
+name = "quake-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+quake-audio = { path = "../crates/quake-audio" }
+quake-input = { path = "../crates/quake-input" }
+quake-render = { path = "../crates/quake-render" }
+quake-world = { path = "../crates/quake-world" }
+
+anyhow.workspace = true
+winit.workspace = true
+tokio = "1.49.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+clap = { version = "4.5.54", features = ["derive"] }

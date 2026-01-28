@@ -1,0 +1,9 @@
+[package]
+name = "quake-audio"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+kira = "0.11.0"

@@ -1,0 +1,11 @@
+[package]
+name = "quake-render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+
+wgpu = "28.0.0"
+pollster = "0.4.0"

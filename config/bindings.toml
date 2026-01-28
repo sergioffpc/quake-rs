@@ -1,0 +1,35 @@
+[[bindings]]
+intent = "app.spawn demo demo1.dem"
+trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyS" }] }
+
+[[bindings]]
+intent = "app.despawn 0"
+trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyD" }] }
+
+[[bindings]]
+intent = "app.join 0"
+trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyJ" }] }
+
+[[bindings]]
+intent = "app.leave"
+trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyL" }] }
+
+[[bindings]]
+intent = "app.halt"
+trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyQ" }] }
+
+[[bindings]]
+intent = "player.forward"
+trigger = { type = "single", key = "ArrowUp" }
+
+[[bindings]]
+intent = "player.backward"
+trigger = { type = "single", key = "ArrowDown" }
+
+[[bindings]]
+intent = "player.left"
+trigger = { type = "single", key = "ArrowLeft" }
+
+[[bindings]]
+intent = "player.right"
+trigger = { type = "single", key = "ArrowRight" }
