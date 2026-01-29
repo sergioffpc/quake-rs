@@ -1,3 +1,4 @@
+use crate::{ConnectionId, MessageWrapper};
 use bytes::{Bytes, BytesMut};
 use quinn::RecvStream;
 use quinn::rustls::RootCertStore;
@@ -10,17 +11,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
-
-static CONNECTION_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ConnectionId(u64);
-
-impl ConnectionId {
-    pub fn new() -> Self {
-        Self(CONNECTION_ID_GENERATOR.fetch_add(1, Ordering::Relaxed))
-    }
-}
 
 #[derive(Debug, Default)]
 struct Connections {
@@ -39,18 +29,12 @@ impl Connections {
     }
 }
 
-#[derive(Debug)]
-pub struct MessageWrapper<M> {
-    pub connection_id: ConnectionId,
-    pub message: M,
-}
-
-pub struct ServerSender<M> {
+pub(crate) struct QuicServerSender<M> {
     send_buffer: mpsc::UnboundedSender<MessageWrapper<M>>,
 }
 
-impl<M> ServerSender<M> {
-    pub fn send_message(&self, message: MessageWrapper<M>) -> anyhow::Result<()>
+impl<M> QuicServerSender<M> {
+    pub(crate) fn send_message(&self, message: MessageWrapper<M>) -> anyhow::Result<()>
     where
         M: Send + Sync + 'static,
     {
@@ -79,12 +63,12 @@ fn spawn_sender_task<M>(
     });
 }
 
-pub struct ServerReceiver<M> {
+pub(crate) struct QuicServerReceiver<M> {
     recv_buffer: mpsc::UnboundedReceiver<MessageWrapper<M>>,
 }
 
-impl<M> ServerReceiver<M> {
-    pub fn try_recv_message(&mut self) -> Option<MessageWrapper<M>> {
+impl<M> QuicServerReceiver<M> {
+    pub(crate) fn try_recv_message(&mut self) -> Option<MessageWrapper<M>> {
         self.recv_buffer.try_recv().ok()
     }
 }
@@ -191,11 +175,11 @@ where
         .map_err(|e| anyhow::anyhow!("{}", e))
 }
 
-pub fn server_channel<P, M>(
+pub(crate) fn server_channel<P, M>(
     addr: SocketAddr,
     cert_path: P,
     key_path: P,
-) -> anyhow::Result<(ServerSender<M>, ServerReceiver<M>)>
+) -> anyhow::Result<(QuicServerSender<M>, QuicServerReceiver<M>)>
 where
     P: AsRef<Path>,
     M: DeserializeOwned + Serialize + Send + 'static,
@@ -229,21 +213,21 @@ where
     info!(%addr, "listening on");
 
     Ok((
-        ServerSender {
+        QuicServerSender {
             send_buffer: sender_tx,
         },
-        ServerReceiver {
+        QuicServerReceiver {
             recv_buffer: receiver_rx,
         },
     ))
 }
 
-pub struct ClientSender<M> {
+pub(crate) struct QuicClientSender<M> {
     send_buffer: mpsc::UnboundedSender<M>,
 }
 
-impl<M> ClientSender<M> {
-    pub fn send_message(&mut self, message: M) -> anyhow::Result<()>
+impl<M> QuicClientSender<M> {
+    pub(crate) fn send_message(&mut self, message: M) -> anyhow::Result<()>
     where
         M: Serialize + Send + 'static,
     {
@@ -267,12 +251,12 @@ impl ClientSenderTask {
     }
 }
 
-pub struct ClientReceiver<M> {
+pub(crate) struct QuicClientReceiver<M> {
     recv_buffer: mpsc::UnboundedReceiver<M>,
 }
 
-impl<M> ClientReceiver<M> {
-    pub fn try_recv_message(&mut self) -> Option<M> {
+impl<M> QuicClientReceiver<M> {
+    pub(crate) fn try_recv_message(&mut self) -> Option<M> {
         self.recv_buffer.try_recv().ok()
     }
 }
@@ -336,10 +320,10 @@ impl ClientReceiverTask {
     }
 }
 
-pub async fn client_channel<P, M>(
+pub(crate) async fn client_channel<P, M>(
     addr: SocketAddr,
     ca_path: P,
-) -> anyhow::Result<(ClientSender<M>, ClientReceiver<M>)>
+) -> anyhow::Result<(QuicClientSender<M>, QuicClientReceiver<M>)>
 where
     P: AsRef<Path>,
     M: DeserializeOwned + Serialize + Send + 'static,
@@ -382,10 +366,10 @@ where
     ClientReceiverTask::run(connection, receiver_tx);
 
     Ok((
-        ClientSender {
+        QuicClientSender {
             send_buffer: sender_tx,
         },
-        ClientReceiver {
+        QuicClientReceiver {
             recv_buffer: receiver_rx,
         },
     ))

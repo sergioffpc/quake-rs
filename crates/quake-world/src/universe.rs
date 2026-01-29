@@ -1,39 +1,30 @@
-use crate::components::PlayerId;
 use crate::world::{
-    WorldCommand, WorldConnectionState, WorldId, WorldIntent, WorldMap, WorldMessage, WorldMode,
-    WorldNotification, WorldServer,
+    PlayerId, WorldCommand, WorldConnectionState, WorldId, WorldIntent, WorldMap, WorldMessage,
+    WorldMode, WorldNotification, WorldServer,
 };
-use quake_network::quic::{ConnectionId, MessageWrapper};
+use quake_network::{ConnectionId, MessageWrapper};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::num::NonZero;
+use std::num::{NonZero, NonZeroUsize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::{debug, error, info};
 
 pub struct UniverseServer {
-    network_sender: quake_network::quic::ServerSender<WorldMessage>,
-    network_receiver: quake_network::quic::ServerReceiver<WorldMessage>,
-
+    network_manager: quake_network::NetworkServer<WorldMessage>,
     universe: ShardedUniverse,
 }
 
 impl UniverseServer {
-    pub fn new(addr: SocketAddr) -> anyhow::Result<Self> {
-        let certs_path = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs"));
-        let (network_sender, network_receiver) = quake_network::quic::server_channel(
-            addr,
-            certs_path.join("server.crt"),
-            certs_path.join("server.key"),
-        )?;
-
-        let num_shards = std::thread::available_parallelism()
-            .unwrap_or(NonZero::new(1).unwrap())
-            .get();
-        let universe = ShardedUniverse::new(num_shards)?;
+    pub fn new(
+        num_shards: NonZeroUsize,
+        network_manager: quake_network::NetworkServer<WorldMessage>,
+        asset_manager: quake_asset::AssetManager,
+    ) -> anyhow::Result<Self> {
+        let universe = ShardedUniverse::new(num_shards, asset_manager)?;
 
         Ok(Self {
-            network_sender,
-            network_receiver,
+            network_manager,
             universe,
         })
     }
@@ -42,7 +33,7 @@ impl UniverseServer {
         while let Some(MessageWrapper {
             connection_id,
             message: world_message,
-        }) = self.network_receiver.try_recv_message()
+        }) = self.network_manager.try_recv_message()
         {
             match world_message {
                 WorldMessage::Command(WorldCommand::Spawn { world_mode }) => {
@@ -75,7 +66,7 @@ impl UniverseServer {
 
         for universe_handle in self.universe.iter_mut() {
             while let Ok(world_message) = universe_handle.world_message_receiver.try_recv() {
-                self.network_sender.send_message(world_message)?;
+                self.network_manager.send_message(world_message)?;
             }
         }
 
@@ -173,25 +164,35 @@ impl UniverseServer {
 }
 
 struct ShardedUniverse {
-    num_shards: usize,
+    num_shards: NonZeroUsize,
     shards: Box<[UniverseHandle]>,
 }
 
 impl ShardedUniverse {
-    fn new(num_shards: usize) -> anyhow::Result<Self> {
+    fn new(
+        num_shards: NonZeroUsize,
+        asset_manager: quake_asset::AssetManager,
+    ) -> anyhow::Result<Self> {
         debug!(?num_shards, "sharded universe");
 
-        let mut shards = Vec::with_capacity(num_shards);
-        for i in 0..num_shards {
+        let asset_manager = Arc::new(asset_manager);
+
+        let mut shards = Vec::with_capacity(num_shards.get());
+        for i in 0..num_shards.get() {
             let (universe_message_sender, universe_message_receiver) =
                 std::sync::mpsc::channel::<UniverseMessage>();
             let (world_message_sender, world_message_receiver) =
                 std::sync::mpsc::channel::<MessageWrapper<WorldMessage>>();
 
+            let asset_manager = Arc::clone(&asset_manager);
             let join_handle = std::thread::Builder::new()
                 .name(format!("universe-thread-{}", i))
                 .spawn(|| {
-                    let result = Universe::new(universe_message_receiver, world_message_sender);
+                    let result = Universe::new(
+                        universe_message_receiver,
+                        world_message_sender,
+                        asset_manager,
+                    );
                     match result {
                         Ok(mut universe) => loop {
                             universe.step().unwrap();
@@ -276,7 +277,9 @@ enum UniverseCommand {
 struct Universe {
     universe_message_receiver: std::sync::mpsc::Receiver<UniverseMessage>,
     world_message_sender: std::sync::mpsc::Sender<MessageWrapper<WorldMessage>>,
-    asset_manager: quake_asset::AssetManager,
+
+    asset_manager: Arc<quake_asset::AssetManager>,
+
     world_servers: HashMap<WorldId, WorldServer>,
 }
 
@@ -284,10 +287,8 @@ impl Universe {
     fn new(
         universe_message_receiver: std::sync::mpsc::Receiver<UniverseMessage>,
         world_message_sender: std::sync::mpsc::Sender<MessageWrapper<WorldMessage>>,
+        asset_manager: Arc<quake_asset::AssetManager>,
     ) -> anyhow::Result<Self> {
-        let resources_path = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../res"));
-        let asset_manager = quake_asset::AssetManager::new(resources_path)?;
-
         Ok(Self {
             universe_message_receiver,
             world_message_sender,

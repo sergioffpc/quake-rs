@@ -3,7 +3,7 @@ intent = "app.spawn demo demo1.dem"
 trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyS" }] }
 
 [[bindings]]
-intent = "app.despawn 0"
+intent = "app.despawn"
 trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyD" }] }
 
 [[bindings]]

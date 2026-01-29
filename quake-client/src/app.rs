@@ -1,3 +1,4 @@
+use clap::Parser;
 use quake_input::Source;
 use quake_world::world::{WorldId, WorldMode};
 use std::net::SocketAddr;
@@ -12,7 +13,19 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowId;
 
-pub async fn run(addr: SocketAddr) -> anyhow::Result<()> {
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(long, default_value = "config/")]
+    config_path: PathBuf,
+    #[arg(long, default_value = "res/")]
+    resources_path: PathBuf,
+    #[arg(long, default_value = "certs/")]
+    certs_path: PathBuf,
+    #[arg(long, default_value = "[::1]:30512")]
+    connect_addr: SocketAddr,
+}
+
+pub async fn run() -> anyhow::Result<()> {
     let event_loop = EventLoop::<ClientCommand>::with_user_event().build()?;
 
     // Applications which want to render at the display’s native refresh rate should use Poll and
@@ -20,15 +33,18 @@ pub async fn run(addr: SocketAddr) -> anyhow::Result<()> {
     event_loop.set_control_flow(ControlFlow::Poll);
 
     let event_loop_proxy = event_loop.create_proxy();
-    let mut app = ClientApp::new(addr, event_loop_proxy).await?;
+
+    let args = Args::parse();
+    let mut app = ClientApp::new(args, event_loop_proxy).await?;
+
     event_loop.run_app(&mut app).map_err(Into::into)
 }
 
 #[derive(Clone, Debug)]
 enum ClientCommand {
-    Spawn(WorldMode),
-    Despawn(WorldId),
-    Join(WorldId),
+    Spawn { world_mode: WorldMode },
+    Despawn,
+    Join { world_id: WorldId },
     Leave,
     Halt,
 }
@@ -38,23 +54,21 @@ impl ClientCommand {
         let mut iter = s.split_whitespace();
         match iter.next() {
             Some("app.spawn") => match iter.next() {
-                Some("demo") => Some(Self::Spawn(WorldMode::Demo(PathBuf::from(
-                    iter.next().unwrap(),
-                )))),
-                Some("campaign") => Some(Self::Spawn(WorldMode::Campaign(PathBuf::from(
-                    iter.next().unwrap(),
-                )))),
-                Some("deathmatch") => Some(Self::Spawn(WorldMode::Deathmatch(PathBuf::from(
-                    iter.next().unwrap(),
-                )))),
+                Some("demo") => Some(Self::Spawn {
+                    world_mode: WorldMode::Demo(PathBuf::from(iter.next().unwrap())),
+                }),
+                Some("campaign") => Some(Self::Spawn {
+                    world_mode: WorldMode::Campaign(PathBuf::from(iter.next().unwrap())),
+                }),
+                Some("deathmatch") => Some(Self::Spawn {
+                    world_mode: WorldMode::Deathmatch(PathBuf::from(iter.next().unwrap())),
+                }),
                 _ => None,
             },
-            Some("app.despawn") => Some(Self::Despawn(WorldId::from(
-                iter.next().unwrap().parse::<u64>().unwrap(),
-            ))),
-            Some("app.join") => Some(Self::Join(WorldId::from(
-                iter.next().unwrap().parse::<u64>().unwrap(),
-            ))),
+            Some("app.despawn") => Some(Self::Despawn),
+            Some("app.join") => Some(Self::Join {
+                world_id: WorldId::from(iter.next().unwrap().parse::<u64>().unwrap()),
+            }),
             Some("app.leave") => Some(Self::Leave),
             Some("app.halt") => Some(Self::Halt),
             _ => None,
@@ -75,38 +89,36 @@ enum ClientPhase {
 struct ClientApp {
     event_loop_proxy: EventLoopProxy<ClientCommand>,
     phase: ClientPhase,
+
     audio_manager: quake_audio::AudioManager,
     input_manager: quake_input::InputManager,
-    world: quake_world::world::WorldClient,
+    world_manager: quake_world::world::WorldClient,
 }
 
 impl ClientApp {
     async fn new(
-        addr: SocketAddr,
+        args: Args,
         event_loop_proxy: EventLoopProxy<ClientCommand>,
     ) -> anyhow::Result<Self> {
         let audio_manager = quake_audio::AudioManager::new()?;
-
-        let bindings_path = Path::new(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../config/bindings.toml"
-        ));
-        let mappings_path = Path::new(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../config/mappings.toml"
-        ));
+        let bindings_path = args.config_path.to_path_buf().join("bindings.toml");
+        let mappings_path = args.config_path.to_path_buf().join("mappings.toml");
         let input_manager = quake_input::InputManager::default()
             .with_bindings(bindings_path)
             .unwrap()
             .with_mappings(mappings_path)?;
-        let world = quake_world::world::WorldClient::new(addr).await?;
+        let network_manager =
+            quake_network::NetworkClient::quic(args.connect_addr, args.certs_path).await?;
+        let asset_manager = quake_asset::AssetManager::new(args.resources_path)?;
+        let world_manager =
+            quake_world::world::WorldClient::new(network_manager, asset_manager).await?;
 
         Ok(Self {
             event_loop_proxy,
             phase: ClientPhase::Uninitialized,
             audio_manager,
             input_manager,
-            world,
+            world_manager,
         })
     }
 }
@@ -141,10 +153,10 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
         info!(?event, "user event");
 
         match event {
-            ClientCommand::Spawn(world_mode) => self.world.spawn(world_mode).unwrap(),
-            ClientCommand::Despawn(world_id) => self.world.despawn(world_id).unwrap(),
-            ClientCommand::Join(world_id) => self.world.join(world_id).unwrap(),
-            ClientCommand::Leave => self.world.leave().unwrap(),
+            ClientCommand::Spawn { world_mode } => self.world_manager.spawn(world_mode).unwrap(),
+            ClientCommand::Despawn => self.world_manager.despawn().unwrap(),
+            ClientCommand::Join { world_id } => self.world_manager.join(world_id).unwrap(),
+            ClientCommand::Leave => self.world_manager.leave().unwrap(),
             ClientCommand::Halt => {
                 event_loop.exit();
             }
@@ -333,7 +345,7 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
                 self.event_loop_proxy.send_event(command).unwrap();
             }
 
-            self.world.step().unwrap();
+            self.world_manager.step().unwrap();
 
             render_manager.on_acquire_frame().unwrap();
             render_manager.on_draw_frame();

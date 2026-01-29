@@ -1,13 +1,14 @@
 use crate::CommittedEvents;
-use crate::components::{EntityId, PlayerId};
+use crate::components::EntityId;
 use crate::systems::{DemPlayback, replay_dem_stream_system};
 use quake_asset::pak::bsp::Component;
 use quake_asset::pak::dem::DemEvent;
-use quake_network::quic::ConnectionId;
+use quake_network::ConnectionId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tracing::{error, info};
@@ -35,6 +36,23 @@ impl From<WorldId> for u64 {
     }
 }
 
+impl Display for WorldId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+static PLAYER_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PlayerId(u64);
+
+impl PlayerId {
+    pub fn new() -> Self {
+        Self(PLAYER_ID_GENERATOR.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WorldExecutionState {
     Running,
@@ -43,9 +61,11 @@ enum WorldExecutionState {
 
 pub struct WorldServer {
     state: WorldExecutionState,
+
     entities: legion::World,
     resources: legion::Resources,
     systems: legion::Schedule,
+
     connections: HashMap<ConnectionId, WorldConnectionState>,
 }
 
@@ -59,8 +79,9 @@ impl WorldServer {
         let mut resources = legion::Resources::default();
         let systems = match &world_mode {
             WorldMode::Demo(dem_path) => {
-                let world_map =
-                    Self::load_dem(dem_path, asset_manager, &mut entities, &mut resources)?;
+                let dem = asset_manager
+                    .by_name::<quake_asset::pak::dem::Dem>(dem_path.to_str().unwrap())?;
+                let world_map = Self::load_dem(dem, &mut entities, &mut resources)?;
                 resources.insert(world_map);
 
                 legion::Schedule::builder()
@@ -68,15 +89,17 @@ impl WorldServer {
                     .build()
             }
             WorldMode::Campaign(map_path) => {
-                let world_map =
-                    Self::load_map(map_path, asset_manager, &mut entities, &mut resources)?;
+                let bsp = asset_manager
+                    .by_name::<quake_asset::pak::bsp::Bsp>(map_path.to_str().unwrap())?;
+                let world_map = Self::load_bsp(bsp, &mut entities, &mut resources)?;
                 resources.insert(world_map);
 
                 legion::Schedule::builder().build()
             }
             WorldMode::Deathmatch(map_path) => {
-                let world_map =
-                    Self::load_map(map_path, asset_manager, &mut entities, &mut resources)?;
+                let bsp = asset_manager
+                    .by_name::<quake_asset::pak::bsp::Bsp>(map_path.to_str().unwrap())?;
+                let world_map = Self::load_bsp(bsp, &mut entities, &mut resources)?;
                 resources.insert(world_map);
 
                 legion::Schedule::builder().build()
@@ -194,17 +217,11 @@ impl WorldServer {
 
     pub fn on_intent(&mut self, world_intent: WorldIntent) {}
 
-    fn load_dem<P>(
-        dem_path: P,
-        asset_manager: &quake_asset::AssetManager,
+    fn load_dem(
+        dem: quake_asset::pak::dem::Dem,
         entities: &mut legion::World,
         resources: &mut legion::Resources,
-    ) -> anyhow::Result<WorldMap>
-    where
-        P: AsRef<Path>,
-    {
-        let dem = asset_manager
-            .by_name::<quake_asset::pak::dem::Dem>(dem_path.as_ref().to_str().unwrap())?;
+    ) -> anyhow::Result<WorldMap> {
         let Some(DemEvent::ServerInfo {
             map_path,
             precache_models,
@@ -223,17 +240,11 @@ impl WorldServer {
         })
     }
 
-    fn load_map<P>(
-        map_path: P,
-        asset_manager: &quake_asset::AssetManager,
+    fn load_bsp(
+        bsp: quake_asset::pak::bsp::Bsp,
         entities: &mut legion::World,
         resources: &mut legion::Resources,
-    ) -> anyhow::Result<WorldMap>
-    where
-        P: AsRef<Path>,
-    {
-        let bsp = asset_manager
-            .by_name::<quake_asset::pak::bsp::Bsp>(map_path.as_ref().to_str().unwrap())?;
+    ) -> anyhow::Result<()> {
         for (i, e) in bsp.entities.iter().enumerate() {
             let entity = entities.push((EntityId(i as u64),));
             let mut entry = entities.entry(entity).unwrap();
@@ -290,18 +301,12 @@ impl WorldServer {
             }
         }
 
-        Ok(WorldMap {
-            map_path: map_path.as_ref().to_owned(),
-            precache_models: Box::new([]),
-            precache_sounds: Box::new([]),
-        })
+        Ok(())
     }
 }
 
 pub struct WorldClient {
-    network_sender: quake_network::quic::ClientSender<WorldMessage>,
-    network_receiver: quake_network::quic::ClientReceiver<WorldMessage>,
-
+    network_manager: quake_network::NetworkClient<WorldMessage>,
     asset_manager: quake_asset::AssetManager,
 
     entities: legion::World,
@@ -309,18 +314,12 @@ pub struct WorldClient {
 }
 
 impl WorldClient {
-    pub async fn new(addr: SocketAddr) -> anyhow::Result<Self> {
-        let certs_path = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../certs"));
-        let (network_sender, network_receiver) =
-            quake_network::quic::client_channel(addr, certs_path.join("ca.crt")).await?;
-
-        let resources_path = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../res"));
-        let asset_manager = quake_asset::AssetManager::new(resources_path)?;
-
+    pub async fn new(
+        network_manager: quake_network::NetworkClient<WorldMessage>,
+        asset_manager: quake_asset::AssetManager,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
-            network_sender,
-            network_receiver,
-
+            network_manager,
             asset_manager,
 
             entities: legion::World::default(),
@@ -331,25 +330,29 @@ impl WorldClient {
     pub fn spawn(&mut self, world_mode: WorldMode) -> anyhow::Result<()> {
         info!(?world_mode, "spawn world");
 
-        self.network_sender
+        self.network_manager
             .send_message(WorldMessage::Command(WorldCommand::Spawn { world_mode }))
     }
 
-    pub fn despawn(&mut self, world_id: WorldId) -> anyhow::Result<()> {
+    pub fn despawn(&mut self) -> anyhow::Result<()> {
+        let Some(world_id) = self.resources.get::<WorldId>() else {
+            return Ok(());
+        };
         info!(?world_id, "despawn world");
 
-        self.network_sender
-            .send_message(WorldMessage::Command(WorldCommand::Despawn { world_id }))
+        self.network_manager
+            .send_message(WorldMessage::Command(WorldCommand::Despawn {
+                world_id: *world_id,
+            }))
     }
 
     pub fn join(&mut self, world_id: WorldId) -> anyhow::Result<()> {
         if self.resources.get::<WorldId>().is_some() {
             return Err(anyhow::anyhow!("already joined a world"));
         };
-
         info!(?world_id, "join world");
 
-        self.network_sender
+        self.network_manager
             .send_message(WorldMessage::Command(WorldCommand::Join { world_id }))
     }
 
@@ -360,7 +363,7 @@ impl WorldClient {
         let player_id = self.resources.get::<PlayerId>().unwrap();
         info!(?world_id, ?player_id, "leave world");
 
-        self.network_sender
+        self.network_manager
             .send_message(WorldMessage::Command(WorldCommand::Leave {
                 world_id: *world_id,
                 player_id: *player_id,
@@ -368,7 +371,7 @@ impl WorldClient {
     }
 
     pub fn step(&mut self) -> anyhow::Result<()> {
-        while let Some(world_message) = self.network_receiver.try_recv_message() {
+        while let Some(world_message) = self.network_manager.try_recv_message() {
             match world_message {
                 WorldMessage::Notification(world_notification) => match world_notification {
                     WorldNotification::Spawned { world_id } => self.on_spawned(world_id)?,
@@ -379,7 +382,7 @@ impl WorldClient {
                         player_id,
                     } => {
                         self.on_joined(world_id, world_map, player_id)?;
-                        self.network_sender.send_message(WorldMessage::Command(
+                        self.network_manager.send_message(WorldMessage::Command(
                             WorldCommand::Play {
                                 world_id,
                                 player_id,

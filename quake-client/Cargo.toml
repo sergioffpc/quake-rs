@@ -5,8 +5,10 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+quake-asset = { path = "../crates/quake-asset" }
 quake-audio = { path = "../crates/quake-audio" }
 quake-input = { path = "../crates/quake-input" }
+quake-network = { path = "../crates/quake-network" }
 quake-render = { path = "../crates/quake-render" }
 quake-world = { path = "../crates/quake-world" }
 

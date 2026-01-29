@@ -61,9 +61,16 @@ pub fn replay_dem_stream(
             // set view/camera entity.
             DemEvent::SetView { .. } => {}
             // start a sound with params at origin.
-            DemEvent::PlaySound { .. } => {}
+            DemEvent::PlaySound {
+                volume,
+                attenuation,
+                entity_id,
+                channel,
+                sound_id,
+                origin,
+            } => {}
             // stop a sound on entity/channel.
-            DemEvent::StopSound { .. } => {}
+            DemEvent::StopSound { entity_id, channel } => {}
             // console print text.
             DemEvent::Print { .. } => {}
             // server-injected console command(s).

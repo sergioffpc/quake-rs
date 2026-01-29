@@ -2077,8 +2077,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "quake-asset",
  "quake-audio",
  "quake-input",
+ "quake-network",
  "quake-render",
  "quake-world",
  "tokio",

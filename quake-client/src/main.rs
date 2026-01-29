@@ -1,14 +1,6 @@
-use clap::Parser;
-use std::net::SocketAddr;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod app;
-
-#[derive(Parser, Debug)]
-struct Args {
-    #[arg(long, default_value = "[::1]:30512")]
-    connect: SocketAddr,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -22,7 +14,5 @@ async fn main() -> anyhow::Result<()> {
         )
         .with(EnvFilter::from_default_env())
         .init();
-
-    let args = Args::parse();
-    app::run(args.connect).await
+    app::run().await
 }
