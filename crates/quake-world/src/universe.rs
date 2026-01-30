@@ -541,7 +541,8 @@ impl Universe {
     }
 
     fn on_spawn(&mut self, world_id: WorldId, world_mode: WorldMode) -> anyhow::Result<()> {
-        let world_server = WorldServer::new(world_id, world_mode, &self.asset_manager)?;
+        let mut world_server = WorldServer::new(world_id, Arc::clone(&self.asset_manager))?;
+        world_server.load(world_mode)?;
 
         self.insert(world_id, world_server);
 
@@ -549,6 +550,9 @@ impl Universe {
     }
 
     fn on_despawn(&mut self, world_id: WorldId) {
+        if let Some(world_server) = self.world_servers.get_mut(&world_id) {
+            world_server.unload();
+        }
         self.remove(world_id);
     }
 }

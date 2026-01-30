@@ -5,6 +5,8 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+quake-asset = { path = "../quake-asset" }
+
 anyhow.workspace = true
 
 wgpu = "28.0.0"

@@ -1,6 +1,8 @@
 use kira::sound::static_sound::StaticSoundData;
 use std::fmt::Display;
 use std::io::Cursor;
+use std::path::Path;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SoundId(u64);
@@ -25,24 +27,30 @@ impl Display for SoundId {
 
 pub struct AudioManager {
     manager: kira::AudioManager<kira::DefaultBackend>,
+
+    asset_manager: Arc<quake_asset::AssetManager>,
     precache: Vec<StaticSoundData>,
 }
 
 impl AudioManager {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(asset_manager: Arc<quake_asset::AssetManager>) -> anyhow::Result<Self> {
         let manager =
             kira::AudioManager::<kira::DefaultBackend>::new(kira::AudioManagerSettings::default())?;
         Ok(Self {
+            asset_manager,
             manager,
             precache: Vec::new(),
         })
     }
 
-    pub fn preload<T>(&mut self, cursor: Cursor<T>) -> anyhow::Result<()>
+    pub fn preload<P>(&mut self, sound_path: P) -> anyhow::Result<()>
     where
-        T: AsRef<[u8]> + Send + Sync + 'static,
+        P: AsRef<Path>,
     {
-        let sound = StaticSoundData::from_cursor(cursor)?;
+        let data = self
+            .asset_manager
+            .by_name::<Vec<u8>>(sound_path.as_ref().to_str().unwrap())?;
+        let sound = StaticSoundData::from_cursor(Cursor::new(data))?;
         self.precache.push(sound);
         Ok(())
     }

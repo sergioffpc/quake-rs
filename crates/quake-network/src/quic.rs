@@ -29,12 +29,12 @@ impl Connections {
     }
 }
 
-pub(crate) struct QuicServerSender<M> {
+pub struct QuicServerSender<M> {
     send_buffer: mpsc::UnboundedSender<MessageWrapper<M>>,
 }
 
 impl<M> QuicServerSender<M> {
-    pub(crate) fn send_message(&self, message: MessageWrapper<M>) -> anyhow::Result<()>
+    pub fn send_message(&self, message: MessageWrapper<M>) -> anyhow::Result<()>
     where
         M: Send + Sync + 'static,
     {
@@ -63,12 +63,12 @@ fn spawn_sender_task<M>(
     });
 }
 
-pub(crate) struct QuicServerReceiver<M> {
+pub struct QuicServerReceiver<M> {
     recv_buffer: mpsc::UnboundedReceiver<MessageWrapper<M>>,
 }
 
 impl<M> QuicServerReceiver<M> {
-    pub(crate) fn try_recv_message(&mut self) -> Option<MessageWrapper<M>> {
+    pub fn try_recv_message(&mut self) -> Option<MessageWrapper<M>> {
         self.recv_buffer.try_recv().ok()
     }
 }
@@ -175,7 +175,7 @@ where
         .map_err(|e| anyhow::anyhow!("{}", e))
 }
 
-pub(crate) fn server_channel<P, M>(
+pub fn server_channel<P, M>(
     addr: SocketAddr,
     cert_path: P,
     key_path: P,
@@ -222,12 +222,12 @@ where
     ))
 }
 
-pub(crate) struct QuicClientSender<M> {
+pub struct QuicClientSender<M> {
     send_buffer: mpsc::UnboundedSender<M>,
 }
 
 impl<M> QuicClientSender<M> {
-    pub(crate) fn send_message(&mut self, message: M) -> anyhow::Result<()>
+    pub fn send_message(&mut self, message: M) -> anyhow::Result<()>
     where
         M: Serialize + Send + 'static,
     {
@@ -251,12 +251,12 @@ impl ClientSenderTask {
     }
 }
 
-pub(crate) struct QuicClientReceiver<M> {
+pub struct QuicClientReceiver<M> {
     recv_buffer: mpsc::UnboundedReceiver<M>,
 }
 
 impl<M> QuicClientReceiver<M> {
-    pub(crate) fn try_recv_message(&mut self) -> Option<M> {
+    pub fn try_recv_message(&mut self) -> Option<M> {
         self.recv_buffer.try_recv().ok()
     }
 }
@@ -320,7 +320,7 @@ impl ClientReceiverTask {
     }
 }
 
-pub(crate) async fn client_channel<P, M>(
+pub async fn client_channel<P, M>(
     addr: SocketAddr,
     ca_path: P,
 ) -> anyhow::Result<(QuicClientSender<M>, QuicClientReceiver<M>)>

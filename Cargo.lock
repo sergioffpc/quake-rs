@@ -2069,6 +2069,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "kira",
+ "quake-asset",
 ]
 
 [[package]]
@@ -2121,6 +2122,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "pollster",
+ "quake-asset",
  "wgpu",
 ]
 

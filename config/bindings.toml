@@ -15,8 +15,24 @@ intent = "app.leave"
 trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyL" }] }
 
 [[bindings]]
+intent = "app.play"
+trigger = { type = "single", key = "KeyS" }
+
+[[bindings]]
+intent = "app.pause"
+trigger = { type = "single", key = "KeyP" }
+
+[[bindings]]
+intent = "app.resume"
+trigger = { type = "single", key = "KeyR" }
+
+[[bindings]]
+intent = "app.stop"
+trigger = { type = "single", key = "KeyQ" }
+
+[[bindings]]
 intent = "app.halt"
-trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyQ" }] }
+trigger = { type = "chord", chord = [{ key = "ControlLeft" }, { key = "KeyH" }] }
 
 [[bindings]]
 intent = "player.forward"

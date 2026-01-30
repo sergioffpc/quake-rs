@@ -1,9 +1,5 @@
-pub struct RenderManagerDescriptor<'a> {
-    pub display_handle: &'a dyn wgpu::rwh::HasDisplayHandle,
-    pub window_handle: &'a dyn wgpu::rwh::HasWindowHandle,
-    pub width: u32,
-    pub height: u32,
-}
+use std::path::Path;
+use std::sync::Arc;
 
 pub struct RenderManager {
     surface: wgpu::Surface<'static>,
@@ -13,10 +9,19 @@ pub struct RenderManager {
 
     surface_texture: Option<wgpu::SurfaceTexture>,
     command_encoder: Option<wgpu::CommandEncoder>,
+
+    asset_manager: Arc<quake_asset::AssetManager>,
+    precache: Vec<()>,
 }
 
 impl RenderManager {
-    pub fn new(desc: &RenderManagerDescriptor<'_>) -> anyhow::Result<Self> {
+    pub fn new(
+        display_handle: &dyn wgpu::rwh::HasDisplayHandle,
+        window_handle: &dyn wgpu::rwh::HasWindowHandle,
+        width: u32,
+        height: u32,
+        asset_manager: Arc<quake_asset::AssetManager>,
+    ) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::default(),
             flags: wgpu::InstanceFlags::debugging(),
@@ -24,8 +29,8 @@ impl RenderManager {
             backend_options: wgpu::BackendOptions::default(),
         });
 
-        let window_handle = desc.window_handle.window_handle()?;
-        let display_handle = desc.display_handle.display_handle()?;
+        let window_handle = window_handle.window_handle()?;
+        let display_handle = display_handle.display_handle()?;
 
         let surface = unsafe {
             let target = wgpu::SurfaceTargetUnsafe::RawHandle {
@@ -55,8 +60,8 @@ impl RenderManager {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_caps.formats[0],
-            width: desc.width,
-            height: desc.height,
+            width,
+            height,
             present_mode: wgpu::PresentMode::Fifo,
             desired_maximum_frame_latency: 0,
             alpha_mode: wgpu::CompositeAlphaMode::default(),
@@ -71,6 +76,8 @@ impl RenderManager {
             queue,
             surface_texture: None,
             command_encoder: None,
+            asset_manager,
+            precache: Vec::default(),
         })
     }
 
@@ -133,5 +140,12 @@ impl RenderManager {
         if let Some(surface_texture) = self.surface_texture.take() {
             surface_texture.present();
         }
+    }
+
+    pub fn preload<P>(&mut self, model_path: P) -> anyhow::Result<()>
+    where
+        P: AsRef<Path>,
+    {
+        Ok(())
     }
 }

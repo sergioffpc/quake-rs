@@ -5,5 +5,8 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+quake-asset = { path = "../quake-asset" }
+
 anyhow.workspace = true
+
 kira = "0.11.0"
