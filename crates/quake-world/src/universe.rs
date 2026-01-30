@@ -1,6 +1,6 @@
 use crate::world::{
-    PlayerId, WorldCommand, WorldConnectionState, WorldId, WorldIntent, WorldMap, WorldMessage,
-    WorldMode, WorldNotification, WorldServer,
+    PlayerId, WorldCommand, WorldId, WorldIntent, WorldMap, WorldMessage, WorldMode,
+    WorldNotification, WorldServer,
 };
 use quake_network::{ConnectionId, MessageWrapper};
 use std::collections::HashMap;
@@ -56,6 +56,24 @@ impl UniverseServer {
                     player_id,
                 }) => {
                     self.on_play(connection_id, world_id, player_id)?;
+                }
+                WorldMessage::Command(WorldCommand::Pause {
+                    world_id,
+                    player_id,
+                }) => {
+                    self.on_pause(connection_id, world_id, player_id)?;
+                }
+                WorldMessage::Command(WorldCommand::Resume {
+                    world_id,
+                    player_id,
+                }) => {
+                    self.on_resume(connection_id, world_id, player_id)?;
+                }
+                WorldMessage::Command(WorldCommand::Stop {
+                    world_id,
+                    player_id,
+                }) => {
+                    self.on_stop(connection_id, world_id, player_id)?;
                 }
                 WorldMessage::Intent(world_intent) => {
                     self.on_intent(world_intent)?;
@@ -150,6 +168,66 @@ impl UniverseServer {
             UniverseMessage::Command {
                 connection_id,
                 command: UniverseCommand::Play {
+                    world_id,
+                    player_id,
+                },
+            },
+        )
+    }
+
+    fn on_pause(
+        &mut self,
+        connection_id: ConnectionId,
+        world_id: WorldId,
+        player_id: PlayerId,
+    ) -> anyhow::Result<()> {
+        info!(?connection_id, ?world_id, ?player_id, "pause world");
+
+        self.universe.shard_routing(
+            world_id,
+            UniverseMessage::Command {
+                connection_id,
+                command: UniverseCommand::Pause {
+                    world_id,
+                    player_id,
+                },
+            },
+        )
+    }
+
+    fn on_resume(
+        &mut self,
+        connection_id: ConnectionId,
+        world_id: WorldId,
+        player_id: PlayerId,
+    ) -> anyhow::Result<()> {
+        info!(?connection_id, ?world_id, ?player_id, "resume world");
+
+        self.universe.shard_routing(
+            world_id,
+            UniverseMessage::Command {
+                connection_id,
+                command: UniverseCommand::Resume {
+                    world_id,
+                    player_id,
+                },
+            },
+        )
+    }
+
+    fn on_stop(
+        &mut self,
+        connection_id: ConnectionId,
+        world_id: WorldId,
+        player_id: PlayerId,
+    ) -> anyhow::Result<()> {
+        info!(?connection_id, ?world_id, ?player_id, "stop world");
+
+        self.universe.shard_routing(
+            world_id,
+            UniverseMessage::Command {
+                connection_id,
+                command: UniverseCommand::Stop {
                     world_id,
                     player_id,
                 },
@@ -272,6 +350,18 @@ enum UniverseCommand {
         world_id: WorldId,
         player_id: PlayerId,
     },
+    Pause {
+        world_id: WorldId,
+        player_id: PlayerId,
+    },
+    Resume {
+        world_id: WorldId,
+        player_id: PlayerId,
+    },
+    Stop {
+        world_id: WorldId,
+        player_id: PlayerId,
+    },
 }
 
 struct Universe {
@@ -389,6 +479,42 @@ impl Universe {
                         world_server.on_play(connection_id, player_id);
                     }
                 }
+                UniverseMessage::Command {
+                    connection_id,
+                    command:
+                        UniverseCommand::Pause {
+                            world_id,
+                            player_id,
+                        },
+                } => {
+                    if let Some(world_server) = self.world_servers.get_mut(&world_id) {
+                        world_server.on_pause(connection_id, player_id);
+                    }
+                }
+                UniverseMessage::Command {
+                    connection_id,
+                    command:
+                        UniverseCommand::Resume {
+                            world_id,
+                            player_id,
+                        },
+                } => {
+                    if let Some(world_server) = self.world_servers.get_mut(&world_id) {
+                        world_server.on_resume(connection_id, player_id);
+                    }
+                }
+                UniverseMessage::Command {
+                    connection_id,
+                    command:
+                        UniverseCommand::Stop {
+                            world_id,
+                            player_id,
+                        },
+                } => {
+                    if let Some(world_server) = self.world_servers.get_mut(&world_id) {
+                        world_server.on_stop(connection_id, player_id);
+                    }
+                }
                 UniverseMessage::Intent(world_intent @ WorldIntent { world_id, .. }) => {
                     if let Some(world_server) = self.world_servers.get_mut(&world_id) {
                         world_server.on_intent(world_intent);
@@ -399,19 +525,15 @@ impl Universe {
 
         for (_, world_server) in self.world_servers.iter_mut() {
             if let Some(snapshot) = world_server.step() {
-                world_server
-                    .connections_iter()
-                    .for_each(|(connection_id, connection_state)| {
-                        if let WorldConnectionState::Accepted = connection_state {
-                            let result = self.world_message_sender.send(MessageWrapper {
-                                connection_id: *connection_id,
-                                message: WorldMessage::Snapshot(snapshot.clone()),
-                            });
-                            if let Err(err) = result {
-                                error!(?err, ?connection_id, "failed to send snapshot");
-                            }
-                        }
-                    })
+                world_server.active_connections().for_each(|connection_id| {
+                    let result = self.world_message_sender.send(MessageWrapper {
+                        connection_id,
+                        message: WorldMessage::Snapshot(snapshot.clone()),
+                    });
+                    if let Err(err) = result {
+                        error!(?err, ?connection_id, "failed to send snapshot");
+                    }
+                })
             }
         }
 

@@ -1,9 +1,9 @@
-use crate::CommittedEvents;
-use crate::components::EntityId;
-use crate::systems::{DemPlayback, replay_dem_stream_system};
+use crate::component::EntityId;
+use crate::system::{DemPlayback, replay_dem_stream_system};
+use crate::{CommittedEvents, query};
 use quake_asset::pak::bsp::Component;
 use quake_asset::pak::dem::DemEvent;
-use quake_network::ConnectionId;
+use quake_network::{ConnectionId, MessageWrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -59,6 +59,45 @@ enum WorldExecutionState {
     Stopped,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WorldConnectionState {
+    Suspended,
+    Established,
+}
+
+#[derive(Debug, Default)]
+struct Connections {
+    connections: HashMap<ConnectionId, WorldConnectionState>,
+}
+
+impl Connections {
+    fn insert(&mut self, connection_id: ConnectionId, state: WorldConnectionState) {
+        self.connections.insert(connection_id, state);
+    }
+
+    fn remove(&mut self, connection_id: &ConnectionId) {
+        self.connections.remove(connection_id);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.connections.is_empty()
+    }
+
+    fn active_connections(&self) -> impl Iterator<Item = (&ConnectionId, &WorldConnectionState)> {
+        self.connections
+            .iter()
+            .filter(|(_, state)| **state == WorldConnectionState::Established)
+    }
+
+    fn no_active_connections(&self) -> bool {
+        self.connections.is_empty()
+            || self
+                .connections
+                .values()
+                .all(|state| *state == WorldConnectionState::Suspended)
+    }
+}
+
 pub struct WorldServer {
     state: WorldExecutionState,
 
@@ -66,7 +105,7 @@ pub struct WorldServer {
     resources: legion::Resources,
     systems: legion::Schedule,
 
-    connections: HashMap<ConnectionId, WorldConnectionState>,
+    connections: Connections,
 }
 
 impl WorldServer {
@@ -114,7 +153,7 @@ impl WorldServer {
             entities,
             resources,
             systems,
-            connections: HashMap::new(),
+            connections: Connections::default(),
         })
     }
 
@@ -130,8 +169,10 @@ impl WorldServer {
         self.resources.get::<WorldMap>().unwrap().clone()
     }
 
-    pub fn connections_iter(&self) -> impl Iterator<Item = (&ConnectionId, &WorldConnectionState)> {
-        self.connections.iter()
+    pub fn active_connections(&self) -> impl Iterator<Item = ConnectionId> + '_ {
+        self.connections
+            .active_connections()
+            .map(|(connection_id, _)| *connection_id)
     }
 
     pub fn step(&mut self) -> Option<WorldSnapshot> {
@@ -168,7 +209,7 @@ impl WorldServer {
 
     pub fn on_join(&mut self, connection_id: ConnectionId) -> PlayerId {
         self.connections
-            .insert(connection_id, WorldConnectionState::Pending);
+            .insert(connection_id, WorldConnectionState::Suspended);
 
         let player_id = PlayerId::new();
         let entity = self.entities.push((player_id,));
@@ -193,23 +234,50 @@ impl WorldServer {
             self.entities.remove(entity);
         }
 
-        if self.connections.is_empty()
-            || self
-                .connections
-                .values()
-                .all(|state| *state == WorldConnectionState::Pending)
-        {
+        if self.connections.no_active_connections() {
             self.state = WorldExecutionState::Stopped;
         }
     }
 
     pub fn on_play(&mut self, connection_id: ConnectionId, player_id: PlayerId) {
-        use legion::query::IntoQuery;
-        let mut query = <&PlayerId>::query();
-        if query.iter(&self.entities).any(|id| *id == player_id) {
+        if query::player_exists(&self.entities, player_id) {
             self.connections
-                .insert(connection_id, WorldConnectionState::Accepted);
+                .insert(connection_id, WorldConnectionState::Established);
             self.state = WorldExecutionState::Running;
+        } else {
+            error!(?connection_id, ?player_id, "player not found");
+        }
+    }
+
+    pub fn on_pause(&mut self, connection_id: ConnectionId, player_id: PlayerId) {
+        if query::player_exists(&self.entities, player_id) {
+            self.connections
+                .insert(connection_id, WorldConnectionState::Suspended);
+            if self.connections.no_active_connections() {
+                self.state = WorldExecutionState::Stopped;
+            }
+        } else {
+            error!(?connection_id, ?player_id, "player not found");
+        }
+    }
+
+    pub fn on_resume(&mut self, connection_id: ConnectionId, player_id: PlayerId) {
+        if query::player_exists(&self.entities, player_id) {
+            self.connections
+                .insert(connection_id, WorldConnectionState::Established);
+            self.state = WorldExecutionState::Running;
+        } else {
+            error!(?connection_id, ?player_id, "player not found");
+        }
+    }
+
+    pub fn on_stop(&mut self, connection_id: ConnectionId, player_id: PlayerId) {
+        if query::player_exists(&self.entities, player_id) {
+            self.connections
+                .insert(connection_id, WorldConnectionState::Suspended);
+            if self.connections.no_active_connections() {
+                self.state = WorldExecutionState::Stopped;
+            }
         } else {
             error!(?connection_id, ?player_id, "player not found");
         }
@@ -370,6 +438,62 @@ impl WorldClient {
             }))
     }
 
+    pub fn play(&mut self) -> anyhow::Result<()> {
+        let Some(world_id) = self.resources.get::<WorldId>() else {
+            return Err(anyhow::anyhow!("not joined a world"));
+        };
+        let player_id = self.resources.get::<PlayerId>().unwrap();
+        info!(?world_id, ?player_id, "play world");
+
+        self.network_manager
+            .send_message(WorldMessage::Command(WorldCommand::Play {
+                world_id: *world_id,
+                player_id: *player_id,
+            }))
+    }
+
+    pub fn pause(&mut self) -> anyhow::Result<()> {
+        let Some(world_id) = self.resources.get::<WorldId>() else {
+            return Err(anyhow::anyhow!("not joined a world"));
+        };
+        let player_id = self.resources.get::<PlayerId>().unwrap();
+        info!(?world_id, ?player_id, "pause world");
+
+        self.network_manager
+            .send_message(WorldMessage::Command(WorldCommand::Pause {
+                world_id: *world_id,
+                player_id: *player_id,
+            }))
+    }
+
+    pub fn resume(&mut self) -> anyhow::Result<()> {
+        let Some(world_id) = self.resources.get::<WorldId>() else {
+            return Err(anyhow::anyhow!("not joined a world"));
+        };
+        let player_id = self.resources.get::<PlayerId>().unwrap();
+        info!(?world_id, ?player_id, "resume world");
+
+        self.network_manager
+            .send_message(WorldMessage::Command(WorldCommand::Resume {
+                world_id: *world_id,
+                player_id: *player_id,
+            }))
+    }
+
+    pub fn stop(&mut self) -> anyhow::Result<()> {
+        let Some(world_id) = self.resources.get::<WorldId>() else {
+            return Err(anyhow::anyhow!("not joined a world"));
+        };
+        let player_id = self.resources.get::<PlayerId>().unwrap();
+        info!(?world_id, ?player_id, "stop world");
+
+        self.network_manager
+            .send_message(WorldMessage::Command(WorldCommand::Stop {
+                world_id: *world_id,
+                player_id: *player_id,
+            }))
+    }
+
     pub fn step(&mut self) -> anyhow::Result<()> {
         while let Some(world_message) = self.network_manager.try_recv_message() {
             match world_message {
@@ -436,7 +560,6 @@ impl WorldClient {
 
     fn on_snapshot(&mut self, snapshot: WorldSnapshot) {
         use legion::query::IntoQuery;
-
         for entity_snapshot in snapshot.entities.iter() {
             let mut query = <(legion::Entity, &EntityId)>::query();
             query.iter_mut(&mut self.entities).for_each(
@@ -522,12 +645,6 @@ pub struct WorldMap {
     pub precache_sounds: Box<[PathBuf]>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WorldConnectionState {
-    Pending,
-    Accepted,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WorldMessage {
     Command(WorldCommand),
@@ -553,6 +670,18 @@ pub enum WorldCommand {
         player_id: PlayerId,
     },
     Play {
+        world_id: WorldId,
+        player_id: PlayerId,
+    },
+    Pause {
+        world_id: WorldId,
+        player_id: PlayerId,
+    },
+    Resume {
+        world_id: WorldId,
+        player_id: PlayerId,
+    },
+    Stop {
         world_id: WorldId,
         player_id: PlayerId,
     },

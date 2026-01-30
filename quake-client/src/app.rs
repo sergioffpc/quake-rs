@@ -2,7 +2,7 @@ use clap::Parser;
 use quake_input::Source;
 use quake_world::world::{WorldId, WorldMode};
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::info;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -46,6 +46,10 @@ enum ClientCommand {
     Despawn,
     Join { world_id: WorldId },
     Leave,
+    Play,
+    Pause,
+    Resume,
+    Stop,
     Halt,
 }
 
@@ -70,6 +74,10 @@ impl ClientCommand {
                 world_id: WorldId::from(iter.next().unwrap().parse::<u64>().unwrap()),
             }),
             Some("app.leave") => Some(Self::Leave),
+            Some("app.play") => Some(Self::Play),
+            Some("app.pause") => Some(Self::Pause),
+            Some("app.resume") => Some(Self::Resume),
+            Some("app.stop") => Some(Self::Stop),
             Some("app.halt") => Some(Self::Halt),
             _ => None,
         }
@@ -157,6 +165,10 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
             ClientCommand::Despawn => self.world_manager.despawn().unwrap(),
             ClientCommand::Join { world_id } => self.world_manager.join(world_id).unwrap(),
             ClientCommand::Leave => self.world_manager.leave().unwrap(),
+            ClientCommand::Play => self.world_manager.play().unwrap(),
+            ClientCommand::Pause => self.world_manager.pause().unwrap(),
+            ClientCommand::Resume => self.world_manager.resume().unwrap(),
+            ClientCommand::Stop => self.world_manager.stop().unwrap(),
             ClientCommand::Halt => {
                 event_loop.exit();
             }

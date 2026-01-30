@@ -4,6 +4,7 @@ use serde::de::DeserializeOwned;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, Sender};
 
 mod quic;
 
@@ -63,6 +64,10 @@ pub enum NetworkServer<M> {
         sender: QuicServerSender<M>,
         receiver: QuicServerReceiver<M>,
     },
+    Channel {
+        sender: Sender<M>,
+        receiver: Receiver<M>,
+    },
 }
 
 impl<M> NetworkServer<M> {
@@ -85,12 +90,21 @@ impl<M> NetworkServer<M> {
     {
         match self {
             NetworkServer::Quic { sender, .. } => sender.send_message(message),
+            NetworkServer::Channel { sender, .. } => sender
+                .send(message.message)
+                .map_err(|_| anyhow::anyhow!("failed to send message")),
         }
     }
 
     pub fn try_recv_message(&mut self) -> Option<MessageWrapper<M>> {
         match self {
             NetworkServer::Quic { receiver, .. } => receiver.try_recv_message(),
+            NetworkServer::Channel { receiver, .. } => {
+                receiver.try_recv().ok().map(|message| MessageWrapper {
+                    connection_id: ConnectionId::new(),
+                    message,
+                })
+            }
         }
     }
 }

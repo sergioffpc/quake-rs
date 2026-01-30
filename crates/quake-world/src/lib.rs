@@ -5,8 +5,9 @@ use std::vec::Drain;
 pub mod universe;
 pub mod world;
 
-mod components;
-mod systems;
+mod component;
+mod query;
+mod system;
 
 #[derive(Clone, Debug, Default)]
 pub struct EventWriter {
