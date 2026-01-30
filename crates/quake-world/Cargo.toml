@@ -5,12 +5,14 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+quake-audio = { path = "../quake-audio" }
 quake-asset = { path = "../quake-asset" }
 quake-network = { path = "../quake-network" }
+quake-render = { path = "../quake-render" }
 
 anyhow.workspace = true
+glam.workspace = true
 
 legion = "0.4.0"
 serde = { version = "1.0.228", features = ["derive"] }
 tracing = "0.1.44"
-glam = "0.30.10"

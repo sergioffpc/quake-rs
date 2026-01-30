@@ -1,6 +1,6 @@
 use crate::world::WorldEvent;
 use serde::{Deserialize, Serialize};
-use std::vec::Drain;
+use std::collections::VecDeque;
 
 pub mod universe;
 pub mod world;
@@ -11,12 +11,12 @@ mod system;
 
 #[derive(Clone, Debug, Default)]
 pub struct EventWriter {
-    queue: Vec<WorldEvent>,
+    queue: VecDeque<WorldEvent>,
 }
 
 impl EventWriter {
     pub fn push(&mut self, event: WorldEvent) {
-        self.queue.push(event);
+        self.queue.push_back(event);
     }
 
     pub fn commit(&mut self) -> CommittedEvents {
@@ -28,21 +28,19 @@ impl EventWriter {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CommittedEvents {
-    queue: Vec<WorldEvent>,
+    queue: VecDeque<WorldEvent>,
 }
 
 #[derive(Clone, Debug)]
 pub struct EventReader {
-    queue: Vec<WorldEvent>,
+    queue: VecDeque<WorldEvent>,
 }
 
-impl EventReader {
-    pub fn iter(&self) -> impl Iterator<Item = &WorldEvent> {
-        self.queue.iter()
-    }
+impl Iterator for EventReader {
+    type Item = WorldEvent;
 
-    pub fn drain(&mut self) -> Drain<'_, WorldEvent> {
-        self.queue.drain(..)
+    fn next(&mut self) -> Option<Self::Item> {
+        self.queue.pop_front()
     }
 }
 

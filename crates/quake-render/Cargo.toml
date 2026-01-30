@@ -8,6 +8,8 @@ authors.workspace = true
 quake-asset = { path = "../quake-asset" }
 
 anyhow.workspace = true
+serde.workspace = true
 
 wgpu = "28.0.0"
 pollster = "0.4.0"
+tracing = "0.1.44"

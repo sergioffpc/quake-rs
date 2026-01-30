@@ -1,43 +1,40 @@
-use crate::component::EntityId;
+use crate::component::{EntityId, Transform};
 use crate::system::{DemPlayback, replay_dem_stream_system};
-use crate::{CommittedEvents, query};
-use quake_asset::pak::bsp::Component;
+use crate::world::WorldNotification::Spawned;
+use crate::{CommittedEvents, EventReader, EventWriter, query};
+use legion::IntoQuery;
 use quake_asset::pak::dem::DemEvent;
+use quake_audio::AudioEvent;
 use quake_network::{ConnectionId, MessageWrapper};
+use quake_render::RenderEvent;
 use serde::{Deserialize, Serialize};
-use std::collections::vec_deque::Drain;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
-static WORLD_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
+static WORLD_ID_GENERATOR: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct WorldId(u64);
+pub struct WorldId(usize);
 
 impl WorldId {
-    pub fn new() -> Self {
+    pub fn generate() -> Self {
         Self(WORLD_ID_GENERATOR.fetch_add(1, Ordering::Relaxed))
     }
 }
 
-impl Default for WorldId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl From<u64> for WorldId {
-    fn from(value: u64) -> Self {
+impl From<usize> for WorldId {
+    fn from(value: usize) -> Self {
         Self(value)
     }
 }
 
-impl From<WorldId> for u64 {
+impl From<WorldId> for usize {
     fn from(value: WorldId) -> Self {
         value.0
     }
@@ -49,20 +46,14 @@ impl Display for WorldId {
     }
 }
 
-static PLAYER_ID_GENERATOR: AtomicU64 = AtomicU64::new(0);
+static PLAYER_ID_GENERATOR: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PlayerId(u64);
+pub struct PlayerId(usize);
 
 impl PlayerId {
-    pub fn new() -> Self {
+    pub fn generate() -> Self {
         Self(PLAYER_ID_GENERATOR.fetch_add(1, Ordering::Relaxed))
-    }
-}
-
-impl Default for PlayerId {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -166,24 +157,8 @@ impl WorldServer {
                     .add_system(replay_dem_stream_system())
                     .build()
             }
-            WorldMode::Campaign(map_path) => {
-                let bsp = self
-                    .asset_manager
-                    .by_name::<quake_asset::pak::bsp::Bsp>(map_path.to_str().unwrap())?;
-                let world_map = self.load_bsp(bsp)?;
-                self.resources.insert(world_map);
-
-                self.systems = legion::Schedule::builder().build()
-            }
-            WorldMode::Deathmatch(map_path) => {
-                let bsp = self
-                    .asset_manager
-                    .by_name::<quake_asset::pak::bsp::Bsp>(map_path.to_str().unwrap())?;
-                let world_map = self.load_bsp(bsp)?;
-                self.resources.insert(world_map);
-
-                self.systems = legion::Schedule::builder().build()
-            }
+            WorldMode::Campaign(map_path) => self.systems = legion::Schedule::builder().build(),
+            WorldMode::Deathmatch(map_path) => self.systems = legion::Schedule::builder().build(),
         };
 
         Ok(())
@@ -213,12 +188,12 @@ impl WorldServer {
 
         self.resources.insert(delta_time);
         self.resources.insert(Instant::now());
+        self.resources.insert(EventWriter::default());
 
         self.systems
             .execute(&mut self.entities, &mut self.resources);
 
         use legion::query::IntoQuery;
-
         let mut query = <(&EntityId,)>::query();
         let entities = query
             .iter(&self.entities)
@@ -228,8 +203,8 @@ impl WorldServer {
             .collect::<Vec<_>>();
 
         Some(WorldSnapshot {
-            entities: entities.into_boxed_slice(),
-            events: CommittedEvents::default(),
+            snapshots: entities.into_boxed_slice(),
+            events: self.resources.get_mut::<EventWriter>().unwrap().commit(),
         })
     }
 
@@ -237,10 +212,10 @@ impl WorldServer {
         self.connections
             .insert(connection_id, WorldConnectionState::Suspended);
 
-        let player_id = PlayerId::new();
+        let player_id = PlayerId::generate();
         let entity = self.entities.push((player_id,));
         let mut entry = self.entities.entry(entity).unwrap();
-        entry.add_component(Component::Origin(glam::Vec3::ZERO));
+        entry.add_component(Transform::default());
         player_id
     }
 
@@ -329,66 +304,6 @@ impl WorldServer {
             precache_sounds: precache_sounds.clone(),
         })
     }
-
-    fn load_bsp(&mut self, bsp: quake_asset::pak::bsp::Bsp) -> anyhow::Result<()> {
-        for (i, e) in bsp.entities.iter().enumerate() {
-            let entity = self.entities.push((EntityId(i as u64),));
-            let mut entry = self.entities.entry(entity).unwrap();
-
-            for c in e.components.iter() {
-                match c {
-                    // Identifies the entity type, used by the engine to decide behavior, logic, and default properties.
-                    Component::Classname(_) => {}
-                    // 3D position of the entity in world space. Defines where the entity spawns or is placed.
-                    Component::Origin(_) => {}
-                    // Brush or MDL model associated with the entity. For brush entities, usually *n referencing a BSP submodel.
-                    Component::Model(_) => {}
-                    // Bitmask controlling variant behavior of an entity. Each bit enables/disables specific features.
-                    Component::SpawnFlags(_) => {}
-                    // Euler angles (pitch yaw roll) used mainly for rotating brush entities. Quake uses this instead of angles for certain entities.
-                    Component::Mangle(_) => {}
-                    // Name of entities to be removed when this entity is activated. Used for scripted events.
-                    Component::KillTarget(_) => {}
-                    // Name of entities this entity will activate. Core mechanism for linking triggers, doors, buttons, etc.
-                    Component::Target(_) => {}
-                    // Identifier that allows other entities to reference this one via target. Acts like a logical entity ID.
-                    Component::TargetName(_) => {}
-                    // Sound set or sound variant index. Often selects which predefined sound to use (doors, plats, buttons).
-                    Component::Sounds(_) => {}
-                    // Text message displayed to the player when activated. Common in triggers, secrets, or level messages.
-                    Component::Message(_) => {}
-                    // Delay (in seconds) before the entity can be triggered again. Used for repeatable triggers, doors, or timed actions.
-                    Component::Wait(_) => {}
-                    // Light intensity or color information. Controls brightness of light entities.
-                    Component::Light(_) => {}
-                    // Light style index (for flickering, pulsing lights). Refers to animated light patterns (a–z).
-                    Component::Style(_) => {}
-                    // Name of another BSP map to load. Used by trigger_changelevel to transition between levels.
-                    Component::Map(_) => {}
-                    // Hit points of an entity. Applies to monsters, breakables, and damageable objects.
-                    Component::Health(_) => {}
-                    // Movement speed or animation speed. Used by doors, plats, trains, projectiles, etc.
-                    Component::Speed(_) => {}
-                    // Generic numeric parameter. Meaning depends on entity (ammo count, repetitions, number of uses).
-                    Component::Count(_) => {}
-                    // Vertical size or movement distance. Often used by lifts, plats, or special triggers.
-                    Component::Height(_) => {}
-                    // Amount of damage dealt to entities. Used by traps, triggers, and explosive entities.
-                    Component::Damage(_) => {}
-                    // List of WAD files used for textures. Mainly found in worldspawn.
-                    Component::Wad(_) => {}
-                    // Environment type (e.g. medieval, metal, base). Controls ambient sounds and some visual/audio defaults.
-                    Component::WorldType(_) => {}
-                    // Distance the door/platform remains visible when fully open. Prevents complete disappearance into walls.
-                    Component::Lip(_) => {}
-                    // Time in seconds before this entity triggers its target after being activated.
-                    Component::Delay(_) => {}
-                }
-            }
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -402,19 +317,17 @@ pub struct WorldClient {
     state: WorldClientState,
 
     network_manager: quake_network::NetworkClient<WorldMessage>,
-    asset_manager: Arc<quake_asset::AssetManager>,
+    asset_manager: Rc<quake_asset::AssetManager>,
 
     entities: legion::World,
     resources: legion::Resources,
     systems: legion::Schedule,
-
-    notifications: VecDeque<WorldNotification>,
 }
 
 impl WorldClient {
     pub async fn new(
         network_manager: quake_network::NetworkClient<WorldMessage>,
-        asset_manager: Arc<quake_asset::AssetManager>,
+        asset_manager: Rc<quake_asset::AssetManager>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             state: WorldClientState::Stopped,
@@ -425,8 +338,6 @@ impl WorldClient {
             entities: legion::World::default(),
             resources: legion::Resources::default(),
             systems: legion::Schedule::builder().build(),
-
-            notifications: VecDeque::default(),
         })
     }
 
@@ -479,7 +390,7 @@ impl WorldClient {
         let bsp = self
             .asset_manager
             .by_name::<quake_asset::pak::bsp::Bsp>(map_path.to_str().unwrap())?;
-        self.load_bsp(&bsp)
+        Ok(())
     }
 
     pub fn unload(&mut self) {
@@ -568,25 +479,44 @@ impl WorldClient {
             }))
     }
 
-    pub fn step(&mut self) -> anyhow::Result<()> {
-        self.notifications.clear();
+    pub fn step(
+        &mut self,
+        audio_sender: std::sync::mpsc::Sender<AudioEvent>,
+        render_sender: std::sync::mpsc::Sender<RenderEvent>,
+    ) -> anyhow::Result<()> {
         while let Some(world_message) = self.network_manager.try_recv_message() {
             match world_message {
-                WorldMessage::Notification(world_notification) => {
-                    match &world_notification {
-                        WorldNotification::Spawned { world_id } => self.on_spawned(*world_id),
-                        WorldNotification::Despawned => self.on_despawned(),
-                        WorldNotification::Joined {
-                            world_id,
-                            player_id,
-                            ..
-                        } => self.on_joined(*world_id, *player_id),
-                        WorldNotification::Left => self.on_left(),
+                WorldMessage::Notification(world_notification) => match &world_notification {
+                    WorldNotification::Spawned { world_id } => self.on_spawned(*world_id),
+                    WorldNotification::Despawned => self.on_despawned(),
+                    WorldNotification::Joined {
+                        world_id,
+                        world_map,
+                        player_id,
+                    } => {
+                        audio_sender.send(AudioEvent::Load {
+                            precache_sounds: world_map.precache_sounds.clone(),
+                        })?;
+                        render_sender.send(RenderEvent::Load {
+                            precache_models: world_map.precache_models.clone(),
+                        })?;
+                        self.on_joined(*world_id, *player_id);
                     }
-                    self.notifications.push_back(world_notification);
-                }
-                WorldMessage::Snapshot(snapshot) => {
-                    self.on_snapshot(snapshot);
+                    WorldNotification::Left => self.on_left(),
+                },
+                WorldMessage::Snapshot(WorldSnapshot { snapshots, events }) => {
+                    for event in EventReader::from(events) {
+                        match event {
+                            WorldEvent::Entity(entity_event) => {
+                                self.on_entity_event(entity_event);
+                            }
+                            WorldEvent::Render(render_event) => render_sender.send(render_event)?,
+                            WorldEvent::Audio(audio_event) => audio_sender.send(audio_event)?,
+                        }
+                    }
+                    for snapshot in snapshots {
+                        self.on_entity_snapshot(snapshot);
+                    }
                 }
                 _ => (),
             }
@@ -598,10 +528,6 @@ impl WorldClient {
         }
 
         Ok(())
-    }
-
-    pub fn notifications(&mut self) -> Drain<'_, WorldNotification> {
-        self.notifications.drain(..)
     }
 
     fn on_spawned(&mut self, world_id: WorldId) {
@@ -627,76 +553,17 @@ impl WorldClient {
         info!(?world_id, ?player_id, "player left");
     }
 
-    fn on_snapshot(&mut self, snapshot: WorldSnapshot) {
-        use legion::query::IntoQuery;
-        for entity_snapshot in snapshot.entities.iter() {
-            let mut query = <(legion::Entity, &EntityId)>::query();
-            query.iter_mut(&mut self.entities).for_each(
-                |(_, id)| {
-                    if *id == entity_snapshot.entity_id {}
-                },
-            );
-        }
+    fn on_entity_event(&mut self, event: EntityEvent) {
+        debug!(?event, "entity event");
     }
 
-    fn load_bsp(&mut self, bsp: &quake_asset::pak::bsp::Bsp) -> anyhow::Result<()> {
-        for (i, e) in bsp.entities.iter().enumerate() {
-            let entity = self.entities.push((EntityId(i as u64),));
-            let mut entry = self.entities.entry(entity).unwrap();
+    fn on_entity_snapshot(&mut self, snapshot: EntitySnapshot) {
+        debug!(?snapshot, "entity snapshot");
 
-            for c in e.components.iter() {
-                match c {
-                    // Identifies the entity type, used by the engine to decide behavior, logic, and default properties.
-                    Component::Classname(_) => {}
-                    // 3D position of the entity in world space. Defines where the entity spawns or is placed.
-                    Component::Origin(_) => {}
-                    // Brush or MDL model associated with the entity. For brush entities, usually *n referencing a BSP submodel.
-                    Component::Model(_) => {}
-                    // Bitmask controlling variant behavior of an entity. Each bit enables/disables specific features.
-                    Component::SpawnFlags(_) => {}
-                    // Euler angles (pitch yaw roll) used mainly for rotating brush entities. Quake uses this instead of angles for certain entities.
-                    Component::Mangle(_) => {}
-                    // Name of entities to be removed when this entity is activated. Used for scripted events.
-                    Component::KillTarget(_) => {}
-                    // Name of entities this entity will activate. Core mechanism for linking triggers, doors, buttons, etc.
-                    Component::Target(_) => {}
-                    // Identifier that allows other entities to reference this one via target. Acts like a logical entity ID.
-                    Component::TargetName(_) => {}
-                    // Sound set or sound variant index. Often selects which predefined sound to use (doors, plats, buttons).
-                    Component::Sounds(_) => {}
-                    // Text message displayed to the player when activated. Common in triggers, secrets, or level messages.
-                    Component::Message(_) => {}
-                    // Delay (in seconds) before the entity can be triggered again. Used for repeatable triggers, doors, or timed actions.
-                    Component::Wait(_) => {}
-                    // Light intensity or color information. Controls brightness of light entities.
-                    Component::Light(_) => {}
-                    // Light style index (for flickering, pulsing lights). Refers to animated light patterns (a–z).
-                    Component::Style(_) => {}
-                    // Name of another BSP map to load. Used by trigger_changelevel to transition between levels.
-                    Component::Map(_) => {}
-                    // Hit points of an entity. Applies to monsters, breakables, and damageable objects.
-                    Component::Health(_) => {}
-                    // Movement speed or animation speed. Used by doors, plats, trains, projectiles, etc.
-                    Component::Speed(_) => {}
-                    // Generic numeric parameter. Meaning depends on entity (ammo count, repetitions, number of uses).
-                    Component::Count(_) => {}
-                    // Vertical size or movement distance. Often used by lifts, plats, or special triggers.
-                    Component::Height(_) => {}
-                    // Amount of damage dealt to entities. Used by traps, triggers, and explosive entities.
-                    Component::Damage(_) => {}
-                    // List of WAD files used for textures. Mainly found in worldspawn.
-                    Component::Wad(_) => {}
-                    // Environment type (e.g. medieval, metal, base). Controls ambient sounds and some visual/audio defaults.
-                    Component::WorldType(_) => {}
-                    // Distance the door/platform remains visible when fully open. Prevents complete disappearance into walls.
-                    Component::Lip(_) => {}
-                    // Time in seconds before this entity triggers its target after being activated.
-                    Component::Delay(_) => {}
-                }
-            }
-        }
-
-        Ok(())
+        let mut query = <(legion::Entity, &EntityId)>::query();
+        query
+            .iter_mut(&mut self.entities)
+            .for_each(|(_, id)| if *id == snapshot.entity_id {});
     }
 }
 
@@ -778,7 +645,7 @@ pub struct WorldIntent {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorldSnapshot {
-    pub entities: Box<[EntitySnapshot]>,
+    pub snapshots: Box<[EntitySnapshot]>,
     pub events: CommittedEvents,
 }
 
@@ -787,5 +654,20 @@ pub struct EntitySnapshot {
     pub entity_id: EntityId,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub enum WorldEvent {}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum EntityEvent {
+    Spawn {
+        entity_id: EntityId,
+        transform: Transform,
+    },
+    Despawn {
+        entity_id: EntityId,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum WorldEvent {
+    Entity(EntityEvent),
+    Render(RenderEvent),
+    Audio(AudioEvent),
+}

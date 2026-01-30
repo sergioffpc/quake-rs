@@ -96,7 +96,7 @@ impl UniverseServer {
         connection_id: ConnectionId,
         world_mode: WorldMode,
     ) -> anyhow::Result<()> {
-        let world_id = WorldId::new();
+        let world_id = WorldId::generate();
         info!(?connection_id, ?world_id, ?world_mode, "spawn world");
 
         self.universe.shard_routing(
@@ -294,7 +294,7 @@ impl ShardedUniverse {
     }
 
     fn shard_routing(&mut self, world_id: WorldId, message: UniverseMessage) -> anyhow::Result<()> {
-        let shard_index = u64::from(world_id) as usize % self.num_shards;
+        let shard_index = usize::from(world_id) % self.num_shards;
         let universe_handle = &self.shards[shard_index];
 
         debug!(?message, ?shard_index, "shard selected");

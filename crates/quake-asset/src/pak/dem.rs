@@ -103,15 +103,16 @@ impl<'a> Iterator for EventIterator<'a> {
             let entity_id = update_flags
                 .contains(UpdateFlags::U_LONGENTITY)
                 .then(|| self.cursor.read_u16::<LittleEndian>().unwrap())
-                .unwrap_or_else(|| self.cursor.read_u8().unwrap() as u16);
+                .unwrap_or_else(|| self.cursor.read_u8().unwrap() as u16)
+                as usize;
 
             let model_id = update_flags
                 .contains(UpdateFlags::U_MODEL)
-                .then(|| self.cursor.read_u8().unwrap());
+                .then(|| self.cursor.read_u8().unwrap() as usize);
 
             let frame_id = update_flags
                 .contains(UpdateFlags::U_FRAME)
-                .then(|| self.cursor.read_u8().unwrap());
+                .then(|| self.cursor.read_u8().unwrap() as usize);
 
             let colormap = update_flags
                 .contains(UpdateFlags::U_COLORMAP)
@@ -119,7 +120,7 @@ impl<'a> Iterator for EventIterator<'a> {
 
             let skin_id = update_flags
                 .contains(UpdateFlags::U_SKIN)
-                .then(|| self.cursor.read_u8().unwrap());
+                .then(|| self.cursor.read_u8().unwrap() as usize);
 
             let effects = update_flags
                 .contains(UpdateFlags::U_EFFECTS)
@@ -181,7 +182,7 @@ impl<'a> Iterator for EventIterator<'a> {
                 Some(DemEvent::Nop)
             }
             0x05 => Some(DemEvent::SetView {
-                entity_id: self.cursor.read_u16::<LittleEndian>().unwrap(),
+                entity_id: self.cursor.read_u16::<LittleEndian>().unwrap() as usize,
             }),
             0x06 => {
                 let field_mask = SoundFlags::from_bits(self.cursor.read_u8().unwrap()).unwrap();
@@ -198,10 +199,10 @@ impl<'a> Iterator for EventIterator<'a> {
                     .unwrap_or(1.0);
 
                 let value = self.cursor.read_u16::<LittleEndian>().unwrap();
-                let entity_id = value >> 3;
+                let entity_id = (value >> 3) as usize;
                 let channel = value & 0b111;
 
-                let sound_id = self.cursor.read_u8().unwrap();
+                let sound_id = self.cursor.read_u8().unwrap() as usize;
                 let origin = read_xyz_coords(&mut self.cursor).unwrap();
 
                 Some(DemEvent::PlaySound {
@@ -273,13 +274,13 @@ impl<'a> Iterator for EventIterator<'a> {
                 })
             }
             0x0D => {
-                let player_id = self.cursor.read_u8().unwrap();
+                let player_id = self.cursor.read_u8().unwrap() as usize;
                 let name = read_cstring(&mut self.cursor, 0).unwrap();
 
                 Some(DemEvent::UpdateName { player_id, name })
             }
             0x0E => Some(DemEvent::UpdateFrags {
-                player_id: self.cursor.read_u8().unwrap(),
+                player_id: self.cursor.read_u8().unwrap() as usize,
                 frags: self.cursor.read_i16::<LittleEndian>().unwrap(),
             }),
             0x0F => {
@@ -378,13 +379,13 @@ impl<'a> Iterator for EventIterator<'a> {
             }
             0x10 => {
                 let value = self.cursor.read_u16::<LittleEndian>().unwrap();
-                let entity_id = value >> 3;
+                let entity_id = (value >> 3) as usize;
                 let channel = value & 0b111;
 
                 Some(DemEvent::StopSound { entity_id, channel })
             }
             0x11 => {
-                let player_id = self.cursor.read_u8().unwrap();
+                let player_id = self.cursor.read_u8().unwrap() as usize;
 
                 let value = self.cursor.read_u8().unwrap();
                 let shirt_color = value >> 4;
@@ -421,10 +422,10 @@ impl<'a> Iterator for EventIterator<'a> {
                 })
             }
             0x14 => {
-                let model_id = self.cursor.read_u8().unwrap();
-                let frame_id = self.cursor.read_u8().unwrap();
+                let model_id = self.cursor.read_u8().unwrap() as usize;
+                let frame_id = self.cursor.read_u8().unwrap() as usize;
                 let colormap = self.cursor.read_u8().unwrap();
-                let skin_id = self.cursor.read_u8().unwrap();
+                let skin_id = self.cursor.read_u8().unwrap() as usize;
 
                 let mut origin = Vec3::ZERO;
                 let mut angles = Vec3::ZERO;
@@ -443,11 +444,11 @@ impl<'a> Iterator for EventIterator<'a> {
                 })
             }
             0x16 => {
-                let entity_id = self.cursor.read_u16::<LittleEndian>().unwrap();
-                let model_id = self.cursor.read_u8().unwrap();
-                let frame_id = self.cursor.read_u8().unwrap();
+                let entity_id = self.cursor.read_u16::<LittleEndian>().unwrap() as usize;
+                let model_id = self.cursor.read_u8().unwrap() as usize;
+                let frame_id = self.cursor.read_u8().unwrap() as usize;
                 let colormap = self.cursor.read_u8().unwrap();
-                let skin_id = self.cursor.read_u8().unwrap();
+                let skin_id = self.cursor.read_u8().unwrap() as usize;
 
                 let mut origin = Vec3::ZERO;
                 let mut angles = Vec3::ZERO;
@@ -539,7 +540,7 @@ impl<'a> Iterator for EventIterator<'a> {
             0x1C => Some(DemEvent::FoundSecret),
             0x1D => {
                 let origin = read_xyz_coords(&mut self.cursor).unwrap();
-                let sound_id = self.cursor.read_u8().unwrap();
+                let sound_id = self.cursor.read_u8().unwrap() as usize;
                 let volume = self.cursor.read_u8().unwrap();
                 let attenuation = self.cursor.read_u8().unwrap();
 
@@ -574,18 +575,18 @@ pub enum DemEvent {
     Nop,
     Disconnect,
     SetView {
-        entity_id: u16,
+        entity_id: usize,
     },
     PlaySound {
         volume: f32,
         attenuation: f32,
-        entity_id: u16,
+        entity_id: usize,
         channel: u16,
-        sound_id: u8,
+        sound_id: usize,
         origin: Vec3,
     },
     StopSound {
-        entity_id: u16,
+        entity_id: usize,
         channel: u16,
     },
     Time {
@@ -614,24 +615,24 @@ pub enum DemEvent {
         value: i32,
     },
     UpdateName {
-        player_id: u8,
+        player_id: usize,
         name: String,
     },
     UpdateFrags {
-        player_id: u8,
+        player_id: usize,
         frags: i16,
     },
     UpdateColors {
-        player_id: u8,
+        player_id: usize,
         shirt_color: u8,
         pants_color: u8,
     },
     UpdateEntity {
-        entity_id: u16,
-        model_id: Option<u8>,
-        frame_id: Option<u8>,
+        entity_id: usize,
+        model_id: Option<usize>,
+        frame_id: Option<usize>,
         colormap: Option<u8>,
-        skin_id: Option<u8>,
+        skin_id: Option<usize>,
         effects: Option<EffectsFlags>,
         origin1: Option<f32>,
         origin2: Option<f32>,
@@ -671,19 +672,19 @@ pub enum DemEvent {
         origin: Vec3,
     },
     SpawnStatic {
-        model_id: u8,
-        frame_id: u8,
+        model_id: usize,
+        frame_id: usize,
         colormap: u8,
-        skin_id: u8,
+        skin_id: usize,
         origin: Vec3,
         angles: Vec3,
     },
     SpawnBaseline {
-        entity_id: u16,
-        model_id: u8,
-        frame_id: u8,
+        entity_id: usize,
+        model_id: usize,
+        frame_id: usize,
         colormap: u8,
-        skin_id: u8,
+        skin_id: usize,
         origin: Vec3,
         angles: Vec3,
     },
@@ -692,7 +693,7 @@ pub enum DemEvent {
     },
     SpawnStaticSound {
         origin: Vec3,
-        sound_id: u8,
+        sound_id: usize,
         volume: u8,
         attenuation: u8,
     },

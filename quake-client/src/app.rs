@@ -3,6 +3,7 @@ use quake_input::Source;
 use quake_world::world::{WorldId, WorldMap, WorldMode, WorldNotification};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use tracing::info;
 use winit::application::ApplicationHandler;
@@ -47,8 +48,6 @@ enum ClientCommand {
     Despawn,
     Join { world_id: WorldId },
     Leave,
-    Load { world_map: WorldMap },
-    Unload,
     Play,
     Pause,
     Resume,
@@ -74,7 +73,7 @@ impl ClientCommand {
             },
             Some("app.despawn") => Some(Self::Despawn),
             Some("app.join") => Some(Self::Join {
-                world_id: WorldId::from(iter.next().unwrap().parse::<u64>().unwrap()),
+                world_id: WorldId::from(iter.next().unwrap().parse::<usize>().unwrap()),
             }),
             Some("app.leave") => Some(Self::Leave),
             Some("app.play") => Some(Self::Play),
@@ -101,8 +100,8 @@ struct ClientApp {
     event_loop_proxy: EventLoopProxy<ClientCommand>,
     phase: ClientPhase,
 
-    asset_manager: Arc<quake_asset::AssetManager>,
     audio_manager: quake_audio::AudioManager,
+    asset_manager: Rc<quake_asset::AssetManager>,
     input_manager: quake_input::InputManager,
     world_manager: quake_world::world::WorldClient,
 }
@@ -112,8 +111,8 @@ impl ClientApp {
         args: Args,
         event_loop_proxy: EventLoopProxy<ClientCommand>,
     ) -> anyhow::Result<Self> {
-        let asset_manager = Arc::new(quake_asset::AssetManager::new(args.resources_path)?);
-        let audio_manager = quake_audio::AudioManager::new(Arc::clone(&asset_manager))?;
+        let asset_manager = Rc::new(quake_asset::AssetManager::new(args.resources_path)?);
+        let audio_manager = quake_audio::AudioManager::new(Rc::clone(&asset_manager))?;
         let bindings_path = args.config_path.to_path_buf().join("bindings.toml");
         let mappings_path = args.config_path.to_path_buf().join("mappings.toml");
         let input_manager = quake_input::InputManager::default()
@@ -123,14 +122,14 @@ impl ClientApp {
         let network_manager =
             quake_network::NetworkClient::quic(args.connect_addr, args.certs_path).await?;
         let world_manager =
-            quake_world::world::WorldClient::new(network_manager, Arc::clone(&asset_manager))
+            quake_world::world::WorldClient::new(network_manager, Rc::clone(&asset_manager))
                 .await?;
 
         Ok(Self {
             event_loop_proxy,
             phase: ClientPhase::Uninitialized,
-            asset_manager,
             audio_manager,
+            asset_manager,
             input_manager,
             world_manager,
         })
@@ -153,7 +152,7 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
                 &window.window_handle().unwrap(),
                 width,
                 height,
-                Arc::clone(&self.asset_manager),
+                Rc::clone(&self.asset_manager),
             )
             .unwrap();
             self.phase = ClientPhase::Initialized {
@@ -171,27 +170,6 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
             ClientCommand::Despawn => self.world_manager.despawn().unwrap(),
             ClientCommand::Join { world_id } => self.world_manager.join(world_id).unwrap(),
             ClientCommand::Leave => self.world_manager.leave().unwrap(),
-            ClientCommand::Load {
-                world_map:
-                    WorldMap {
-                        map_path,
-                        precache_models,
-                        precache_sounds,
-                    },
-            } => {
-                let ClientPhase::Initialized { render_manager, .. } = &mut self.phase else {
-                    panic!("cannot load map before window is initialized");
-                };
-
-                self.world_manager.load(map_path).unwrap();
-                for model_path in precache_models {
-                    render_manager.preload(model_path).unwrap();
-                }
-                for sound_path in precache_sounds {
-                    self.audio_manager.preload(sound_path).unwrap();
-                }
-            }
-            ClientCommand::Unload => self.world_manager.unload(),
             ClientCommand::Play => self.world_manager.play().unwrap(),
             ClientCommand::Pause => self.world_manager.pause().unwrap(),
             ClientCommand::Resume => self.world_manager.resume().unwrap(),
@@ -383,20 +361,12 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
                 self.event_loop_proxy.send_event(command).unwrap();
             }
 
-            self.world_manager.step().unwrap();
-            while let Some(notification) = self.world_manager.notifications().next() {
-                match notification {
-                    WorldNotification::Joined { world_map, .. } => self
-                        .event_loop_proxy
-                        .send_event(ClientCommand::Load { world_map })
-                        .unwrap(),
-                    WorldNotification::Left => self
-                        .event_loop_proxy
-                        .send_event(ClientCommand::Unload)
-                        .unwrap(),
-                    _ => (),
-                }
-            }
+            let audio_manager = &mut self.audio_manager;
+            self.world_manager
+                .step(audio_manager.sender(), render_manager.sender())
+                .unwrap();
+            audio_manager.flush().unwrap();
+            render_manager.flush().unwrap();
 
             render_manager.on_acquire_frame().unwrap();
             render_manager.on_draw_frame();

@@ -1,5 +1,29 @@
-use std::path::Path;
-use std::sync::Arc;
+use quake_asset::pak::mdl::Mdl;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use tracing::debug;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ModelId(usize);
+
+impl From<usize> for ModelId {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
+
+impl From<ModelId> for usize {
+    fn from(value: ModelId) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum RenderEvent {
+    Load { precache_models: Box<[PathBuf]> },
+    Unload,
+}
 
 pub struct RenderManager {
     surface: wgpu::Surface<'static>,
@@ -10,8 +34,11 @@ pub struct RenderManager {
     surface_texture: Option<wgpu::SurfaceTexture>,
     command_encoder: Option<wgpu::CommandEncoder>,
 
-    asset_manager: Arc<quake_asset::AssetManager>,
-    precache: Vec<()>,
+    sender: std::sync::mpsc::Sender<RenderEvent>,
+    receiver: std::sync::mpsc::Receiver<RenderEvent>,
+
+    asset_manager: Rc<quake_asset::AssetManager>,
+    precache: Vec<Mdl>,
 }
 
 impl RenderManager {
@@ -20,7 +47,7 @@ impl RenderManager {
         window_handle: &dyn wgpu::rwh::HasWindowHandle,
         width: u32,
         height: u32,
-        asset_manager: Arc<quake_asset::AssetManager>,
+        asset_manager: Rc<quake_asset::AssetManager>,
     ) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::default(),
@@ -69,6 +96,8 @@ impl RenderManager {
         };
         surface.configure(&device, &surface_config);
 
+        let (sender, receiver) = std::sync::mpsc::channel::<RenderEvent>();
+
         Ok(Self {
             surface,
             surface_config,
@@ -76,6 +105,8 @@ impl RenderManager {
             queue,
             surface_texture: None,
             command_encoder: None,
+            sender,
+            receiver,
             asset_manager,
             precache: Vec::default(),
         })
@@ -142,7 +173,30 @@ impl RenderManager {
         }
     }
 
-    pub fn preload<P>(&mut self, model_path: P) -> anyhow::Result<()>
+    pub fn sender(&self) -> std::sync::mpsc::Sender<RenderEvent> {
+        self.sender.clone()
+    }
+
+    pub fn flush(&mut self) -> anyhow::Result<()> {
+        while let Some(render_event) = self.receiver.try_recv().ok() {
+            debug!(?render_event, "render event");
+
+            match render_event {
+                RenderEvent::Load { precache_models } => {
+                    for model_path in precache_models.iter() {
+                        self.preload(model_path)?;
+                    }
+                }
+                RenderEvent::Unload => {
+                    self.precache.clear();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn preload<P>(&mut self, model_path: P) -> anyhow::Result<()>
     where
         P: AsRef<Path>,
     {

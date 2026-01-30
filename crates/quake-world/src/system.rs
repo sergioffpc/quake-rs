@@ -1,5 +1,9 @@
-use legion::system;
+use crate::EventWriter;
+use crate::component::{EntityId, Transform};
+use crate::world::{EntityEvent, WorldEvent};
+use legion::{IntoQuery, system};
 use quake_asset::pak::dem::{Dem, DemEvent};
+use quake_audio::{AudioEvent, SoundId};
 use std::collections::VecDeque;
 use std::time::Duration;
 use tracing::debug;
@@ -49,9 +53,14 @@ impl DemPlayback {
 type DueEvents<'a> = VecDeque<&'a DemEvent>;
 
 #[system]
+#[read_component(EntityId)]
+#[read_component(Transform)]
 pub fn replay_dem_stream(
+    world: &mut legion::world::SubWorld,
+    command_buffer: &mut legion::systems::CommandBuffer,
     #[resource] playback: &mut DemPlayback,
     #[resource] delta_time: &Duration,
+    #[resource] event_writer: &mut EventWriter,
 ) {
     let due_events = playback.advance(*delta_time).unwrap_or_default();
     for event in due_events.iter() {
@@ -65,10 +74,22 @@ pub fn replay_dem_stream(
                 volume,
                 attenuation,
                 entity_id,
-                channel,
                 sound_id,
-                origin,
-            } => {}
+                ..
+            } => {
+                let mut query = <(&EntityId, &Transform)>::query();
+                if let Some((_id, transform)) = query
+                    .iter(world)
+                    .find(|(id, _)| usize::from(**id) == *entity_id)
+                {
+                    event_writer.push(WorldEvent::Audio(AudioEvent::Play {
+                        volume: *volume,
+                        attenuation: *attenuation,
+                        sound_id: SoundId::from(*sound_id),
+                        position: transform.position,
+                    }));
+                }
+            }
             // stop a sound on entity/channel.
             DemEvent::StopSound { entity_id, channel } => {}
             // console print text.
@@ -98,7 +119,24 @@ pub fn replay_dem_stream(
             // spawn a static entity.
             DemEvent::SpawnStatic { .. } => {}
             // baseline for an entity.
-            DemEvent::SpawnBaseline { .. } => {}
+            DemEvent::SpawnBaseline {
+                entity_id,
+                model_id,
+                frame_id,
+                colormap,
+                skin_id,
+                origin,
+                angles,
+            } => {
+                let entity_id = EntityId::from(*entity_id);
+                let transform = Transform { position: *origin };
+                command_buffer.push((entity_id, transform));
+
+                event_writer.push(WorldEvent::Entity(EntityEvent::Spawn {
+                    entity_id,
+                    transform,
+                }))
+            }
             // temporary entity effect
             DemEvent::SpawnTemporary { .. } => {}
             // looped/static sound at origin.

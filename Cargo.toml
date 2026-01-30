@@ -18,4 +18,6 @@ authors = ["Sérgio Carvalho sergioffpc@gmail.com"]
 
 [workspace.dependencies]
 anyhow = "1.0.100"
+glam = { version = "0.31.0", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
 winit = "0.30.12"
