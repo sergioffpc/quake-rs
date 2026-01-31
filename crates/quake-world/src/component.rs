@@ -22,6 +22,9 @@ impl Display for EntityId {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Dirty;
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub struct Transform {
     pub position: glam::Vec3,

@@ -177,7 +177,7 @@ impl RenderManager {
         self.sender.clone()
     }
 
-    pub fn flush(&mut self) -> anyhow::Result<()> {
+    pub fn step(&mut self) -> anyhow::Result<()> {
         while let Some(render_event) = self.receiver.try_recv().ok() {
             debug!(?render_event, "render event");
 

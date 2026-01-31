@@ -1,6 +1,7 @@
-use kira::sound::static_sound::StaticSoundData;
+use kira::Tween;
+use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -28,15 +29,20 @@ pub enum AudioEvent {
     },
     Unload,
     Play {
+        handle_index: usize,
         volume: f32,
         attenuation: f32,
         sound_id: SoundId,
         position: glam::Vec3,
     },
+    Stop {
+        handle_index: usize,
+    },
 }
 
 pub struct AudioManager {
     manager: kira::AudioManager<kira::DefaultBackend>,
+    handles: HashMap<usize, StaticSoundHandle>,
 
     sender: std::sync::mpsc::Sender<AudioEvent>,
     receiver: std::sync::mpsc::Receiver<AudioEvent>,
@@ -53,6 +59,7 @@ impl AudioManager {
 
         Ok(Self {
             manager,
+            handles: HashMap::default(),
 
             sender,
             receiver,
@@ -66,7 +73,7 @@ impl AudioManager {
         self.sender.clone()
     }
 
-    pub fn flush(&mut self) -> anyhow::Result<()> {
+    pub fn step(&mut self) -> anyhow::Result<()> {
         while let Some(sound_event) = self.receiver.try_recv().ok() {
             debug!(?sound_event, "audio event");
 
@@ -81,6 +88,9 @@ impl AudioManager {
                 }
                 AudioEvent::Play { sound_id, .. } => {
                     self.play(usize::from(sound_id))?;
+                }
+                AudioEvent::Stop { handle_index } => {
+                    self.stop(handle_index);
                 }
             }
         }
@@ -105,7 +115,15 @@ impl AudioManager {
             .precache
             .get(sound_index)
             .ok_or_else(|| anyhow::anyhow!("sound ID not found: {}", sound_index))?;
-        self.manager.play(sound.clone())?;
+        let handle = self.manager.play(sound.clone())?;
+        self.handles.insert(sound_index, handle);
         Ok(())
+    }
+
+    fn stop(&mut self, handle_index: usize) {
+        if let Some(handle) = self.handles.get_mut(&handle_index) {
+            handle.stop(Tween::default());
+            self.handles.remove(&handle_index);
+        }
     }
 }

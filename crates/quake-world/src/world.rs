@@ -1,8 +1,7 @@
-use crate::component::{EntityId, Transform};
-use crate::system::{DemPlayback, replay_dem_stream_system};
-use crate::world::WorldNotification::Spawned;
+use crate::component::{Dirty, EntityId, Transform};
+use crate::system::{DemPlayback, dem_advance_playback_system, dem_process_playback_system};
 use crate::{CommittedEvents, EventReader, EventWriter, query};
-use legion::IntoQuery;
+use legion::{IntoQuery, component};
 use quake_asset::pak::dem::DemEvent;
 use quake_audio::AudioEvent;
 use quake_network::{ConnectionId, MessageWrapper};
@@ -154,7 +153,8 @@ impl WorldServer {
                 self.resources.insert(world_map);
 
                 self.systems = legion::Schedule::builder()
-                    .add_system(replay_dem_stream_system())
+                    .add_system(dem_advance_playback_system())
+                    .add_system(dem_process_playback_system())
                     .build()
             }
             WorldMode::Campaign(map_path) => self.systems = legion::Schedule::builder().build(),
@@ -189,23 +189,9 @@ impl WorldServer {
         self.resources.insert(delta_time);
         self.resources.insert(Instant::now());
         self.resources.insert(EventWriter::default());
-
         self.systems
             .execute(&mut self.entities, &mut self.resources);
-
-        use legion::query::IntoQuery;
-        let mut query = <(&EntityId,)>::query();
-        let entities = query
-            .iter(&self.entities)
-            .map(|(entity_id,)| EntitySnapshot {
-                entity_id: *entity_id,
-            })
-            .collect::<Vec<_>>();
-
-        Some(WorldSnapshot {
-            snapshots: entities.into_boxed_slice(),
-            events: self.resources.get_mut::<EventWriter>().unwrap().commit(),
-        })
+        self.take_snapshot()
     }
 
     pub fn on_join(&mut self, connection_id: ConnectionId) -> PlayerId {
@@ -285,6 +271,42 @@ impl WorldServer {
     }
 
     pub fn on_intent(&mut self, world_intent: WorldIntent) {}
+
+    fn take_snapshot(&mut self) -> Option<WorldSnapshot> {
+        use legion::query::IntoQuery;
+        let mut query = <(&EntityId, &Transform)>::query().filter(component::<Dirty>());
+        if query.iter(&self.entities).peekable().peek().is_none() {
+            return None;
+        }
+
+        let snapshots = query
+            .iter(&self.entities)
+            .map(|(entity_id, transform)| EntitySnapshot {
+                entity_id: *entity_id,
+                transform: *transform,
+            })
+            .collect::<Vec<_>>();
+        self.clear_dirty_components();
+
+        Some(WorldSnapshot {
+            snapshots: snapshots.into_boxed_slice(),
+            events: self.resources.get_mut::<EventWriter>().unwrap().commit(),
+        })
+    }
+
+    fn clear_dirty_components(&mut self) {
+        let mut query = <(legion::Entity,)>::query().filter(component::<Dirty>());
+        let entities = query
+            .iter(&self.entities)
+            .map(|(e,)| *e)
+            .collect::<Vec<_>>();
+
+        for entity in entities {
+            if let Some(mut entry) = self.entities.entry(entity) {
+                entry.remove_component::<Dirty>();
+            }
+        }
+    }
 
     fn load_dem(&mut self, dem: quake_asset::pak::dem::Dem) -> anyhow::Result<WorldMap> {
         let Some(DemEvent::ServerInfo {
@@ -652,6 +674,7 @@ pub struct WorldSnapshot {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EntitySnapshot {
     pub entity_id: EntityId,
+    pub transform: Transform,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

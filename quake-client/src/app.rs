@@ -175,6 +175,7 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
             ClientCommand::Resume => self.world_manager.resume().unwrap(),
             ClientCommand::Stop => self.world_manager.stop().unwrap(),
             ClientCommand::Halt => {
+                self.world_manager.leave().unwrap();
                 event_loop.exit();
             }
         }
@@ -353,21 +354,17 @@ impl ApplicationHandler<ClientCommand> for ClientApp {
             render_manager,
         } = &mut self.phase
         {
-            for command in self
-                .input_manager
+            self.input_manager
                 .drain()
                 .filter_map(|intent| ClientCommand::from_str(&intent.0))
-            {
-                self.event_loop_proxy.send_event(command).unwrap();
-            }
-
-            let audio_manager = &mut self.audio_manager;
+                .for_each(|command| {
+                    self.event_loop_proxy.send_event(command).unwrap();
+                });
             self.world_manager
-                .step(audio_manager.sender(), render_manager.sender())
+                .step(self.audio_manager.sender(), render_manager.sender())
                 .unwrap();
-            audio_manager.flush().unwrap();
-            render_manager.flush().unwrap();
-
+            self.audio_manager.step().unwrap();
+            render_manager.step().unwrap();
             render_manager.on_acquire_frame().unwrap();
             render_manager.on_draw_frame();
             window.request_redraw();
